@@ -1,31 +1,34 @@
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { parse } = require("csv-parse");
 const { createClient } = require("@supabase/supabase-js");
 const { XMLParser } = require("fast-xml-parser");
+const JSON5 = require("json5");
+const logfmt = require("logfmt");
+const { flatten } = require("flat");
 
 const CSV_FILES = [
-  { name: "Alert.csv", type: "alert" },
-  { name: "Sec Event.csv", type: "log" },
-  { name: "AzurActivity.csv", type: "alert" },
-  { name: "FierWall.csv", type: "log" },
-  { name: "Incedent.csv", type: "alert" },
+  { name: "Alert.csv", kind: "security_event" },
+  { name: "Sec Event.csv", kind: "security_event" },
+  { name: "AzurActivity.csv", kind: "activity" },
+  { name: "FierWall.csv", kind: "firewall" },
+  { name: "Incedent.csv", kind: "incident" },
 ];
 
-class DashboardIngestor {
-  constructor() {
-    this.totalAlerts = 0;
-    this.severityCounts = { critical: 0, high: 0, medium: 0, low: 0 };
-    this.activeInvestigations = 0;
-    this.attackCounts = new Map();
-    this.timeBuckets = new Map();
-    this.last24HoursCount = 0;
-    this.responseSumMs = 0;
-    this.responseCount = 0;
-    this.alertRecords = [];
-    this.logRecords = [];
-    this.logSequence = 0;
-    this.alertSequence = 0;
+const ALERT_STATUSES = new Set(["new", "in_progress", "resolved", "dismissed"]);
+const LOG_STATUSES = new Set(["new", "investigating", "resolved", "dismissed"]);
+
+class EtlV2Ingestor {
+  constructor(supabase) {
+    this.supabase = supabase;
+    this.runId = null;
+    this.rowsSeen = 0;
+    this.rowsAccepted = 0;
+    this.rowsRejected = 0;
+    this.rejectionReasons = new Map();
+    this.batch = [];
+    this.batchSize = 250;
     this.xmlParser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@",
@@ -35,30 +38,80 @@ class DashboardIngestor {
     });
   }
 
-  async insertInBatches(supabase, table, records, batchSize = 200) {
-    for (let i = 0; i < records.length; i += batchSize) {
-      const batch = records.slice(i, i + batchSize);
-      if (!batch.length) continue;
-      let lastError = null;
-      for (let attempt = 1; attempt <= 4; attempt += 1) {
-        const { error } = await supabase.from(table).insert(batch);
-        if (!error) {
-          lastError = null;
-          break;
-        }
-        lastError = error;
-        await new Promise((resolve) => setTimeout(resolve, attempt * 250));
-      }
-      if (lastError) {
-        throw new Error(`Failed to insert into ${table}: ${lastError.message}`);
-      }
+  addReject(reason) {
+    this.rowsRejected += 1;
+    this.rejectionReasons.set(reason, (this.rejectionReasons.get(reason) || 0) + 1);
+  }
+
+  async startRun() {
+    const sourceManifest = CSV_FILES.map((entry) => ({ file: entry.name, kind: entry.kind }));
+    const { data, error } = await this.supabase
+      .from("ingest_runs")
+      .insert({
+        status: "running",
+        source_manifest: sourceManifest,
+      })
+      .select("id")
+      .single();
+
+    if (error || !data?.id) {
+      throw new Error(`Unable to create ingest run: ${error?.message || "unknown"}`);
     }
+
+    this.runId = data.id;
+    return this.runId;
+  }
+
+  async markRun(status, extra = {}) {
+    if (!this.runId) return;
+    const payload = {
+      status,
+      rows_seen: this.rowsSeen,
+      rows_loaded: this.rowsAccepted,
+      rows_rejected: this.rowsRejected,
+      ...extra,
+    };
+    const { error } = await this.supabase.from("ingest_runs").update(payload).eq("id", this.runId);
+    if (error) {
+      throw new Error(`Unable to update ingest run status: ${error.message}`);
+    }
+  }
+
+  async flushBatch() {
+    if (!this.batch.length) return;
+
+    const payload = this.batch;
+    this.batch = [];
+
+    let lastError = null;
+    for (let attempt = 1; attempt <= 4; attempt += 1) {
+      const { error } = await this.supabase
+        .from("stg_events")
+        .upsert(payload, {
+          onConflict: "ingest_run_id,event_uid",
+          ignoreDuplicates: true,
+        });
+
+      if (!error) {
+        lastError = null;
+        break;
+      }
+
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+    }
+
+    if (lastError) {
+      throw new Error(`Failed to write staging batch: ${lastError.message}`);
+    }
+
+    this.rowsAccepted += payload.length;
   }
 
   normalizeRow(row) {
     const normalized = {};
     for (const [key, value] of Object.entries(row)) {
-      const cleanKey = key.replace(/^\uFEFF/, "").trim().toLowerCase();
+      const cleanKey = String(key || "").replace(/^\uFEFF/, "").trim().toLowerCase();
       normalized[cleanKey] = value;
     }
     return normalized;
@@ -66,7 +119,7 @@ class DashboardIngestor {
 
   getField(row, keys) {
     for (const key of keys) {
-      const value = row[key.toLowerCase()];
+      const value = row[String(key).toLowerCase()];
       if (value !== undefined && value !== null && String(value).trim() !== "") {
         return String(value).trim();
       }
@@ -81,46 +134,137 @@ class DashboardIngestor {
     return Number.isNaN(date.getTime()) ? null : date;
   }
 
-  normalizeSeverity(raw, mode = "alert") {
-    const value = String(raw || "").toLowerCase();
-    let mapped = "low";
+  parseDateFromRow(row, kind) {
+    const byKind = {
+      incident: [
+        "timegenerated [utc]",
+        "createdtime [utc]",
+        "firstactivitytime [utc]",
+        "lastactivitytime [utc]",
+        "closedtime [utc]",
+      ],
+      activity: [
+        "timegenerated [utc]",
+        "eventsubmissiontimestamp [utc]",
+      ],
+      firewall: [
+        "timegenerated [utc]",
+        "starttime [utc]",
+        "endtime [utc]",
+        "receipttime",
+      ],
+      security_event: [
+        "timegenerated [utc]",
+        "eventsubmissiontimestamp [utc]",
+        "timecollected [utc]",
+      ],
+    };
 
-    const numeric = Number(value);
-    if (!Number.isNaN(numeric)) {
-      if (numeric >= 8) mapped = "critical";
-      else if (numeric >= 5) mapped = "high";
-      else if (numeric >= 3) mapped = "medium";
-      else mapped = "low";
-    } else if (value.includes("critical")) {
-      mapped = "critical";
-    } else if (value.includes("error") || value.includes("high") || value.includes("severe")) {
-      mapped = "high";
-    } else if (value.includes("warn") || value.includes("medium")) {
-      mapped = "medium";
-    } else if (value.includes("informational") || value.includes("info") || value.includes("success")) {
-      mapped = "informational";
+    const fields = byKind[kind] || byKind.security_event;
+    for (const field of fields) {
+      const parsed = this.parseDate(this.getField(row, [field]));
+      if (parsed) return parsed;
     }
 
-    if (mode === "alert" && mapped === "informational") {
+    return null;
+  }
+
+  normalizeSeverity(raw, kind) {
+    const value = String(raw || "").toLowerCase().trim();
+    const numeric = Number(value);
+
+    if (!Number.isNaN(numeric)) {
+      if (kind === "incident") {
+        if (numeric >= 3) return "critical";
+        if (numeric >= 2) return "high";
+        if (numeric >= 1) return "medium";
+        return "low";
+      }
+      if (kind === "security_event") {
+        // Windows event levels are not linear risk scores.
+        // Common exports include 0/4/8 for informational classes.
+        if (numeric === 1) return "critical";
+        if (numeric === 2) return "high";
+        if (numeric === 3) return "medium";
+        if (numeric === 0 || numeric === 4 || numeric === 8) return "low";
+        return "medium";
+      }
+      if (kind === "firewall") {
+        if (numeric >= 8) return "high";
+        if (numeric >= 5) return "medium";
+        if (numeric >= 3) return "medium";
+        return "low";
+      }
+      if (kind === "activity") {
+        if (numeric >= 8) return "high";
+        if (numeric >= 5) return "medium";
+        if (numeric >= 3) return "medium";
+        return "informational";
+      }
+      if (numeric >= 8) return "high";
+      if (numeric >= 5) return "medium";
+      if (numeric >= 3) return "medium";
       return "low";
     }
 
-    return mapped;
+    const map = {
+      incident: [
+        ["critical", "critical"],
+        ["high", "high"],
+        ["medium", "medium"],
+        ["low", "low"],
+        ["informational", "low"],
+        ["info", "low"],
+      ],
+      activity: [
+        ["critical", "critical"],
+        ["error", "high"],
+        ["failed", "high"],
+        ["warning", "medium"],
+        ["warn", "medium"],
+        ["information", "informational"],
+        ["success", "informational"],
+      ],
+      firewall: [
+        ["critical", "critical"],
+        ["high", "high"],
+        ["notice", "medium"],
+        ["warning", "medium"],
+        ["info", "informational"],
+        ["informational", "informational"],
+      ],
+      security_event: [
+        ["critical", "critical"],
+        ["error", "high"],
+        ["high", "high"],
+        ["warning", "medium"],
+        ["warn", "medium"],
+        ["informational", "informational"],
+        ["success", "informational"],
+      ],
+    };
+
+    const mappings = map[kind] || map.security_event;
+    for (const [needle, out] of mappings) {
+      if (value.includes(needle)) {
+        return out;
+      }
+    }
+
+    return "low";
   }
 
-  normalizeAlertStatus(raw) {
+  normalizeStatus(raw, kind) {
     const value = String(raw || "").toLowerCase();
-    if (value.includes("resolved") || value.includes("closed")) return "resolved";
-    if (value.includes("dismiss") || value.includes("false")) return "dismissed";
-    if (value.includes("progress") || value.includes("active") || value.includes("investigat")) return "in_progress";
-    return "new";
-  }
-
-  normalizeLogStatus(raw) {
-    const value = String(raw || "").toLowerCase();
-    if (value.includes("resolved") || value.includes("closed") || value.includes("success")) return "resolved";
-    if (value.includes("dismiss")) return "dismissed";
-    if (value.includes("progress") || value.includes("active") || value.includes("investigat")) return "investigating";
+    if (value.includes("resolved") || value.includes("closed") || value.includes("complete") || value.includes("success")) {
+      return "resolved";
+    }
+    if (value.includes("dismiss") || value.includes("false")) {
+      return "dismissed";
+    }
+    if (value.includes("progress") || value.includes("active") || value.includes("investigat")) {
+      return kind === "incident" ? "in_progress" : "investigating";
+    }
     return "new";
   }
 
@@ -131,26 +275,40 @@ class DashboardIngestor {
     try {
       return JSON.parse(trimmed);
     } catch {
-      return null;
+      try {
+        return JSON5.parse(trimmed);
+      } catch {
+        return null;
+      }
     }
   }
 
   parseDelimitedKeyValues(value) {
     if (!value || typeof value !== "string" || !value.includes("=")) return null;
-    const result = {};
-    let matches = 0;
-    const chunks = value.split(";");
-    for (const chunk of chunks) {
-      const trimmed = String(chunk || "").trim();
-      if (!trimmed || !trimmed.includes("=")) continue;
-      const [rawKey, ...rawValue] = trimmed.split("=");
-      const key = String(rawKey || "").trim();
-      const parsedValue = rawValue.join("=").trim();
-      if (!key || !parsedValue) continue;
-      result[key] = parsedValue;
-      matches += 1;
+    try {
+      const parsed = logfmt.parse(String(value).replace(/;/g, "\n"));
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+      const entries = Object.entries(parsed).filter(([, v]) => String(v || "").trim() !== "");
+      if (entries.length < 2) return null;
+      const normalized = {};
+      for (const [k, v] of entries) {
+        normalized[String(k)] = String(v);
+      }
+      return normalized;
+    } catch {
+      return null;
     }
-    return matches >= 2 && Object.keys(result).length ? result : null;
+  }
+
+  parseXmlPayload(xml) {
+    if (!xml || !xml.includes("<") || !xml.includes(">")) return null;
+    try {
+      const parsed = this.xmlParser.parse(String(xml).trim());
+      if (!parsed || typeof parsed !== "object") return null;
+      return parsed;
+    } catch {
+      return null;
+    }
   }
 
   normalizePayloadObject(payload) {
@@ -171,6 +329,7 @@ class DashboardIngestor {
           normalized[cleanKey] = this.normalizePayloadObject(nestedJson);
           continue;
         }
+
         const delimited = this.parseDelimitedKeyValues(trimmed);
         if (delimited) {
           normalized[cleanKey] = this.normalizePayloadObject(delimited);
@@ -184,38 +343,61 @@ class DashboardIngestor {
         normalized[cleanKey] = value;
       }
     }
+
     return normalized;
   }
 
-  flattenPayload(payload, prefix = "", out = {}) {
-    if (payload === null || payload === undefined) return out;
-    if (typeof payload !== "object") {
-      if (prefix) out[prefix] = payload;
-      return out;
-    }
-    if (Array.isArray(payload)) {
-      payload.forEach((item, idx) => {
-        this.flattenPayload(item, `${prefix}[${idx + 1}]`, out);
-      });
-      return out;
-    }
-
-    for (const [key, value] of Object.entries(payload)) {
-      const next = prefix ? `${prefix}.${key}` : key;
-      this.flattenPayload(value, next, out);
-    }
-    return out;
+  flattenPayload(payload) {
+    if (!payload || typeof payload !== "object") return {};
+    return flatten(payload, { safe: true, delimiter: "." });
   }
 
-  parseXmlPayload(xml) {
-    if (!xml || !xml.includes("<") || !xml.includes(">")) return null;
-    try {
-      const parsed = this.xmlParser.parse(String(xml).trim());
-      if (!parsed || typeof parsed !== "object") return null;
-      return parsed;
-    } catch {
-      return null;
+  extractFromPayload(payload, keys) {
+    if (!payload || typeof payload !== "object") return "";
+    const flat = this.flattenPayload(payload);
+    for (const key of keys) {
+      const lower = String(key).toLowerCase();
+      for (const [entryKey, entryValue] of Object.entries(flat)) {
+        if (String(entryKey).toLowerCase().endsWith(lower) && entryValue !== null && entryValue !== undefined) {
+          const text = String(entryValue).trim();
+          if (text) return text;
+        }
+      }
     }
+    return "";
+  }
+
+  buildParsedFacts({ kind, row, payloadJson, title, description, status, severity, source, provider, category, eventCode, eventName, actor, resource, ipAddress }) {
+    const additionalData = this.safeJsonParse(this.getField(row, ["additionaldata"])) || {};
+    const tactics = Array.isArray(additionalData.tactics) ? additionalData.tactics.filter(Boolean).slice(0, 10) : [];
+    const alertCount = additionalData.alertsCount ?? "";
+    const relatedRuleIds = this.safeJsonParse(this.getField(row, ["relatedanalyticruleids"]));
+    const ruleIds = Array.isArray(relatedRuleIds)
+      ? relatedRuleIds.map((v) => String(v)).slice(0, 10)
+      : [];
+
+    return {
+      kind,
+      title: title || eventName || "Event",
+      summary: description || "No description provided.",
+      status: status || "new",
+      severity,
+      source,
+      provider: provider || source || "Unknown",
+      category: category || "Unknown",
+      eventCode: eventCode || "",
+      eventName: eventName || "",
+      actor: actor || "",
+      resource: resource || "",
+      ip: ipAddress || "",
+      incidentId: this.getField(row, ["incidentnumber", "providerincidentid", "correlationid", "incidentname"]) || "",
+      classification: this.getField(row, ["classification", "classificationreason"]) || "",
+      owner: this.getField(row, ["owner", "assignedto"]) || "",
+      alertCount: alertCount !== "" ? String(alertCount) : "",
+      tactics,
+      ruleIds,
+      hasPayloadJson: !!payloadJson,
+    };
   }
 
   extractPayload(row) {
@@ -250,43 +432,44 @@ class DashboardIngestor {
         "eventCategory",
         "statusCode",
       ]);
+
       if (directMessage && String(directMessage).trim()) {
-        let clean = String(directMessage).replace(/\s+/g, " ").trim();
-        if (clean.includes("/")) {
-          clean = this.formatOperationTitle(clean);
-        }
+        const clean = String(directMessage).replace(/\s+/g, " ").trim();
         if (clean) return clean.slice(0, 220);
       }
     }
 
-    if (payloadJson && typeof payloadJson === "object") {
-      const pairs = Object.entries(this.flattenPayload(payloadJson))
-        .filter(([, v]) => typeof v !== "object" && v !== null && v !== undefined && String(v).trim() !== "")
-        .slice(0, 3)
-        .map(([k, v]) => `${k}: ${String(v).replace(/\s+/g, " ").slice(0, 64)}`);
-      if (pairs.length) return pairs.join(" | ");
-    }
-
     if (payloadRaw) {
-      return payloadRaw.replace(/\s+/g, " ").slice(0, 220);
+      return String(payloadRaw).replace(/\s+/g, " ").slice(0, 220);
     }
 
     return fallback || "No description provided.";
   }
 
-  extractFromPayload(payload, keys) {
-    if (!payload || typeof payload !== "object") return "";
-    const flat = this.flattenPayload(payload);
-    for (const key of keys) {
-      const lower = String(key).toLowerCase();
-      for (const [entryKey, entryValue] of Object.entries(flat)) {
-        if (String(entryKey).toLowerCase().endsWith(lower) && entryValue !== null && entryValue !== undefined) {
-          const text = String(entryValue).trim();
-          if (text) return text;
-        }
-      }
+  parseIncidentOwner(rawOwner) {
+    const parsed = this.safeJsonParse(rawOwner);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { assignee: "", actor: "" };
     }
-    return "";
+
+    const record = parsed;
+    const assignee = String(
+      record.assignedTo ||
+      record.userPrincipalName ||
+      record.email ||
+      record.objectId ||
+      ""
+    ).trim();
+
+    const actor = String(
+      record.userPrincipalName ||
+      record.email ||
+      record.assignedTo ||
+      record.objectId ||
+      ""
+    ).trim();
+
+    return { assignee, actor };
   }
 
   formatProviderLabel(provider) {
@@ -295,6 +478,7 @@ class DashboardIngestor {
     if (!raw.includes(".") && /[a-z]/.test(raw)) {
       return raw;
     }
+
     const tokens = raw.replace(/^MICROSOFT\./i, "").split(".");
     const label = tokens[tokens.length - 1] || raw;
     const cleaned = String(label)
@@ -303,29 +487,16 @@ class DashboardIngestor {
       .replace(/[_-]+/g, " ")
       .replace(/\s+/g, " ")
       .trim();
+
     return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
   formatOperationTitle(value) {
     const raw = String(value || "").trim();
     if (!raw) return "Event";
-    if (!raw.includes("/")) {
-      return this.humanizeOperationToken(raw);
-    }
 
-    const segments = raw.split("/").filter(Boolean);
-    const actionPart = segments[segments.length - 1] || "";
-    const targetPart = segments[segments.length - 2] || segments[segments.length - 1] || "";
-    const action = this.humanizeOperationToken(actionPart.replace(/action$/i, ""));
-    const target = this.humanizeOperationToken(targetPart);
-    if (!action && !target) return raw;
-    if (!action) return target;
-    if (!target) return action;
-    return `${action} (${target})`;
-  }
-
-  humanizeOperationToken(token) {
-    let value = String(token || "")
+    const token = raw.includes("/") ? raw.split("/").filter(Boolean).at(-1) || raw : raw;
+    return String(token)
       .replace(/listkeys/gi, "list keys")
       .replace(/listcluster/gi, "list cluster")
       .replace(/clusteruser/gi, "cluster user")
@@ -334,61 +505,31 @@ class DashboardIngestor {
       .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
       .replace(/([a-z])([A-Z])/g, "$1 $2")
       .replace(/[_-]+/g, " ")
-      .trim();
-
-    if (value && !value.includes(" ")) {
-      const dictionary = [
-        "credential",
-        "credentials",
-        "cluster",
-        "managed",
-        "admin",
-        "user",
-        "resource",
-        "group",
-        "list",
-        "keys",
-        "host",
-        "site",
-      ];
-      let lowered = value.toLowerCase();
-      dictionary.forEach((word) => {
-        lowered = lowered.replace(new RegExp(word, "g"), ` ${word} `);
-      });
-      value = lowered.replace(/\s+/g, " ").trim();
-    }
-
-    return value
+      .replace(/\s+/g, " ")
+      .trim()
       .toLowerCase()
       .replace(/\b\w/g, (c) => c.toUpperCase());
   }
 
-  detectSchema(row) {
-    if (row["operationnamevalue"]) return "azure_activity";
-    if (row["incidentname"] || row["providename"]) return "incident";
-    if (row["eventid"] || row["activity"] || row["eventsourcename"]) return "security_event";
-    return "generic";
+  stableHash(parts) {
+    return crypto.createHash("sha256").update(parts.join("|")).digest("hex");
   }
 
-  computeResponseTimeMs(row) {
-    const generated = this.parseDate(this.getField(row, ["timegenerated [utc]", "timegenerated"]));
-    const collected = this.parseDate(this.getField(row, ["timecollected [utc]", "timecollected"]));
-    if (!generated || !collected) return null;
-    return Math.max(collected.getTime() - generated.getTime(), 0);
-  }
-
-  addTimeBucket(date, severity) {
-    const hourKey = `${date.toISOString().slice(0, 13)}:00:00Z`;
-    const normalized = ["critical", "high", "medium", "low"].includes(severity) ? severity : "low";
-    const bucket = this.timeBuckets.get(hourKey) || { critical: 0, high: 0, medium: 0, low: 0 };
-    bucket[normalized] += 1;
-    this.timeBuckets.set(hourKey, bucket);
-  }
-
-  trackLast24(date) {
-    if (Date.now() - date.getTime() <= 24 * 60 * 60 * 1000) {
-      this.last24HoursCount += 1;
+  buildEventUid(row, fileName, kind, occurredAt, eventName, resource, actor, summary) {
+    const stable = this.getField(row, ["eventdataid", "incidentnumber", "correlationid"]);
+    if (stable) {
+      return `${kind}-${String(stable).toLowerCase()}`;
     }
+
+    const digest = this.stableHash([
+      fileName,
+      occurredAt.toISOString(),
+      eventName || "",
+      resource || "",
+      actor || "",
+      summary || "",
+    ]);
+    return `${kind}-${digest}`;
   }
 
   toArrayValue(...values) {
@@ -397,39 +538,42 @@ class DashboardIngestor {
       const normalized = String(value || "").trim();
       if (normalized) set.add(normalized);
     });
-    return set.size ? Array.from(set).slice(0, 5) : ["Unknown"];
+    return set.size ? Array.from(set).slice(0, 6) : ["Unknown"];
   }
 
-  buildAlertRecord(row, fileName) {
-    const schema = this.detectSchema(row);
-    const timestamp = this.parseDate(this.getField(row, [
-      "timegenerated [utc]",
-      "eventsubmissiontimestamp [utc]",
-      "createdtime [utc]",
-      "timegenerated",
-    ])) || new Date();
+  buildStagingRecord(row, kind, fileName, rowNumber) {
+    const occurredAt = this.parseDateFromRow(row, kind);
+    if (!occurredAt) {
+      this.addReject("missing_timestamp");
+      return null;
+    }
 
     const severity = this.normalizeSeverity(
-      this.getField(row, ["severity", "level", "eventlevelname", "activitystatusvalue"]),
-      "alert"
+      this.getField(row, ["severity", "logseverity", "level", "eventlevelname", "activitystatusvalue", "threatseverity"]),
+      kind
     );
 
-    const status = this.normalizeAlertStatus(this.getField(row, ["status", "activitystatusvalue"]));
-
+    const status = this.normalizeStatus(this.getField(row, ["status", "activitystatusvalue", "eventoutcome"]), kind);
     const { payloadRaw, payloadJson } = this.extractPayload(row);
 
     const eventCode = this.getField(row, ["eventid", "incidentnumber", "eventdataid", "correlationid", "operationid"]);
-    const rawEventName = this.getField(row, ["operationnamevalue", "title", "activity", "incidentname", "eventsourcename"]);
-    const eventName = rawEventName;
-    const source = this.getField(row, ["sourcesystem", "providername", "categoryvalue", "category", "resourceprovidervalue"]) || "CSV";
-    const provider = this.getField(row, ["resourceprovidervalue", "providername", "eventsourcename", "sourcesystem"]) || source;
+    const eventName = this.getField(row, ["operationnamevalue", "title", "activity", "incidentname", "eventsourcename", "operationname"]);
+    const source = this.getField(row, ["sourcesystem", "providername", "categoryvalue", "category", "resourceprovidervalue", "devicevendor"]) || fileName;
+    const provider = this.getField(row, ["resourceprovidervalue", "providername", "eventsourcename", "sourcesystem", "deviceproduct", "resourceprovider"]) || source;
     const providerLabel = this.formatProviderLabel(provider);
-    const category = this.getField(row, ["categoryvalue", "category", "channel", "task", "eventcategory"]) || "Unknown";
-    const actor = this.getField(row, ["caller", "account", "accountname", "owner", "subjectusername"])
+    const category = this.getField(row, ["categoryvalue", "category", "channel", "task", "eventcategory", "deviceeventcategory", "type"]) || "Unknown";
+
+    const incidentOwnerRaw = kind === "incident" ? this.getField(row, ["owner"]) : "";
+    const incidentOwner = this.parseIncidentOwner(incidentOwnerRaw);
+
+    const actor = this.getField(row, ["caller", "account", "accountname", "subjectusername", "sourceusername", "destinationusername"])
+      || incidentOwner.actor
       || this.extractFromPayload(payloadJson, ["caller", "account", "targetUser", "subjectUserName", "SourceUserName", "DestinationUserName"]);
-    const resource = this.getField(row, ["resource", "resourceid", "entity", "computer", "workstation"])
+
+    const resource = this.getField(row, ["resource", "resourceid", "entity", "computer", "workstation", "destinationhostname", "devicename"])
       || this.extractFromPayload(payloadJson, ["resource", "entity", "resourceId", "fullFilePath", "filePath", "DestinationHostName", "SourceHostName"]);
-    const ipAddress = this.getField(row, ["calleripaddress", "ipaddress", "remoteipaddress", "clientipaddress", "clientaddress"])
+
+    const ipAddress = this.getField(row, ["calleripaddress", "ipaddress", "remoteipaddress", "clientipaddress", "clientaddress", "sourceip", "destinationip", "remoteip", "maliciousip"])
       || this.extractFromPayload(payloadJson, ["callerIpAddress", "ipAddress", "remoteIpAddress", "SourceIP", "DestinationIP", "clientIpAddress"]);
 
     const title = this.formatOperationTitle(
@@ -438,27 +582,49 @@ class DashboardIngestor {
       this.getField(row, ["title", "activity", "operationnamevalue"]) ||
       "Event"
     );
-    const description = this.summaryFromPayload(payloadRaw, payloadJson, this.getField(row, ["description", "activity", "title"]));
 
-    this.alertSequence += 1;
-    const idSeed = eventCode || eventName || schema || "alert";
-    const safeSeed = String(idSeed).replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 64) || "alert";
+    const description = this.summaryFromPayload(payloadRaw, payloadJson, this.getField(row, ["description", "activity", "title", "message"]));
+
+    const eventUid = this.buildEventUid(row, fileName, kind, occurredAt, eventName, resource, actor, description);
+    const rowHash = this.stableHash([JSON.stringify(row)]);
+
+    const normalizedStatus = ALERT_STATUSES.has(status)
+      ? status
+      : LOG_STATUSES.has(status)
+        ? status
+        : "new";
+
+    const isIncident = kind === "incident";
+    const isHighRisk = severity === "critical" || severity === "high";
+
+    const parsedFacts = this.buildParsedFacts({
+      kind,
+      row,
+      payloadJson,
+      title,
+      description,
+      status: normalizedStatus,
+      severity,
+      source: providerLabel || source,
+      provider,
+      category,
+      eventCode,
+      eventName,
+      actor,
+      resource,
+      ipAddress,
+    });
 
     return {
-      id: `csv-${this.alertSequence}-${safeSeed}`,
-      title,
+      ingest_run_id: this.runId,
+      event_uid: eventUid,
+      source_file: fileName,
+      source_kind: kind,
+      source_row_number: rowNumber,
+      occurred_at: occurredAt.toISOString(),
       severity,
-      status,
+      status: normalizedStatus,
       source: providerLabel || source,
-      timestamp: timestamp.toISOString(),
-      description,
-      assignee: actor || null,
-      tactics: this.toArrayValue(
-        this.getField(row, ["categoryvalue", "eventcategory", "activity", "operationnamevalue"]) || category,
-        schema
-      ),
-      affected_entities: this.toArrayValue(resource, actor),
-      recommended_actions: ["Review event context", "Validate source and actor", "Document triage outcome"],
       provider,
       category,
       event_code: eventCode || null,
@@ -468,271 +634,139 @@ class DashboardIngestor {
       ip_address: ipAddress || null,
       payload_raw: payloadRaw || null,
       payload_json: payloadJson || null,
-      source_file: fileName,
+      parsed_facts: parsedFacts,
+      summary: description,
+      raw_row: row,
+      row_hash: rowHash,
+      title,
+      description,
+      assignee: isIncident ? (incidentOwner.assignee || this.getField(row, ["assignedto"]) || null) : null,
+      tactics: this.toArrayValue(category, kind),
+      affected_entities: this.toArrayValue(resource, actor),
+      recommended_actions: ["Review event context", "Validate source and actor", "Document triage outcome"],
+      is_alert_candidate: isIncident || isHighRisk,
     };
   }
 
-  buildLogRecord(row, fileName) {
-    const timestamp = this.parseDate(this.getField(row, [
-      "timegenerated [utc]",
-      "eventsubmissiontimestamp [utc]",
-      "createdtime [utc]",
-      "timegenerated",
-      "time collected [utc]",
-    ])) || new Date();
-
-    const severity = this.normalizeSeverity(
-      this.getField(row, ["severity", "level", "eventlevelname", "activitystatusvalue"]),
-      "log"
+  async ingestFile(filePath, kind, fileName) {
+    const parser = fs.createReadStream(filePath).pipe(
+      parse({
+        columns: true,
+        skip_empty_lines: true,
+        relax_quotes: true,
+        trim: true,
+      })
     );
 
-    const status = this.normalizeLogStatus(this.getField(row, ["status", "activitystatusvalue"]));
-    const { payloadRaw, payloadJson } = this.extractPayload(row);
+    let rowNumber = 1;
+    for await (const rawRow of parser) {
+      this.rowsSeen += 1;
+      const row = this.normalizeRow(rawRow);
+      const record = this.buildStagingRecord(row, kind, fileName, rowNumber);
+      rowNumber += 1;
 
-    const eventCode = this.getField(row, ["eventid", "eventdataid", "correlationid", "operationid"]);
-    const rawEventName = this.getField(row, ["operationnamevalue", "activity", "title", "incidentname", "eventsourcename"]);
-    const eventName = rawEventName;
-    const source = this.getField(row, ["eventsourcename", "category", "sourcesystem", "resourceprovidervalue"]) || "Log CSV";
-    const provider = this.getField(row, ["resourceprovidervalue", "providername", "eventsourcename", "sourcesystem"]) || source;
-    const providerLabel = this.formatProviderLabel(provider);
-    const category = this.getField(row, ["categoryvalue", "channel", "category", "subcategoryid", "task"]) || "Unknown";
-    const actor = this.getField(row, ["caller", "account", "accountname", "subjectusername", "sourceusername", "destinationusername"])
-      || this.extractFromPayload(payloadJson, ["caller", "account", "targetUser", "subjectUserName", "SourceUserName", "DestinationUserName"]);
-    const resource = this.getField(row, ["resource", "resourceid", "entity", "computer", "workstation"])
-      || this.extractFromPayload(payloadJson, ["resource", "entity", "resourceId", "fullFilePath", "filePath", "DestinationHostName", "SourceHostName"]);
-    const ipAddress = this.getField(row, ["calleripaddress", "ipaddress", "remoteipaddress", "clientipaddress", "clientaddress", "sourceip", "destinationip", "remoteip"])
-      || this.extractFromPayload(payloadJson, ["callerIpAddress", "ipAddress", "remoteIpAddress", "SourceIP", "DestinationIP", "clientIpAddress"]);
+      if (!record) {
+        continue;
+      }
 
-    const message = this.summaryFromPayload(
-      payloadRaw,
-      payloadJson,
-      this.getField(row, ["message", "description", "activity", "operationnamevalue", "title"]) ||
-        this.formatOperationTitle(eventName)
-    );
-
-    this.logSequence += 1;
-    const idSeed = eventCode || eventName || "log";
-    const safeSeed = String(idSeed).replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 48) || "log";
-
-    return {
-      id: `csv-log-${this.logSequence}-${safeSeed}`,
-      timestamp: timestamp.toISOString(),
-      severity,
-      source: providerLabel || source,
-      category,
-      message,
-      ip_address: ipAddress || "Unknown",
-      user: actor || "Unknown",
-      status,
-      provider,
-      event_code: eventCode || null,
-      event_name: eventName || null,
-      actor: actor || null,
-      resource: resource || null,
-      payload_raw: payloadRaw || null,
-      payload_json: payloadJson || null,
-      source_file: fileName,
-    };
-  }
-
-  processAlertMetrics(alertRecord) {
-    this.totalAlerts += 1;
-    this.severityCounts[alertRecord.severity] += 1;
-    if (alertRecord.status === "in_progress") {
-      this.activeInvestigations += 1;
+      this.batch.push(record);
+      if (this.batch.length >= this.batchSize) {
+        await this.flushBatch();
+      }
     }
-
-    const ts = new Date(alertRecord.timestamp);
-    this.addTimeBucket(ts, alertRecord.severity);
-    this.trackLast24(ts);
-
-    const attackKey = alertRecord.ip_address || alertRecord.resource || alertRecord.source || "unknown";
-    this.attackCounts.set(attackKey, (this.attackCounts.get(attackKey) || 0) + 1);
   }
 
   async ingestFiles() {
     for (const entry of CSV_FILES) {
       const filePath = path.join(__dirname, "..", entry.name);
       if (!fs.existsSync(filePath)) {
-        console.warn(`Skipping missing file: ${entry.name}`);
+        this.addReject(`missing_file:${entry.name}`);
         continue;
       }
-      await this.ingestFile(filePath, entry.type, entry.name);
+      await this.ingestFile(filePath, entry.kind, entry.name);
+      await this.flushBatch();
     }
   }
 
-  ingestFile(filePath, type, fileName) {
-    return new Promise((resolve, reject) => {
-      const parser = parse({
-        columns: true,
-        skip_empty_lines: true,
-        relax_quotes: true,
-        trim: true,
-      });
-
-      parser.on("data", (rawRow) => {
-        const row = this.normalizeRow(rawRow);
-
-        if (type === "alert") {
-          const alertRecord = this.buildAlertRecord(row, fileName);
-          this.alertRecords.push(alertRecord);
-          this.processAlertMetrics(alertRecord);
-
-          const responseMs = this.computeResponseTimeMs(row);
-          if (responseMs !== null) {
-            this.responseCount += 1;
-            this.responseSumMs += responseMs;
-          }
-          return;
-        }
-
-        const logRecord = this.buildLogRecord(row, fileName);
-        this.logRecords.push(logRecord);
-      });
-
-      parser.on("end", () => resolve());
-      parser.on("error", reject);
-
-      fs.createReadStream(filePath).pipe(parser);
-    });
+  rejectionSummary() {
+    if (!this.rejectionReasons.size) return null;
+    return Array.from(this.rejectionReasons.entries())
+      .map(([reason, count]) => `${reason}:${count}`)
+      .join(", ");
   }
 
-  async persist(supabase) {
-    await this.upsertThreatMetrics(supabase);
-    await this.upsertSeries(supabase);
-    await this.upsertSeverity(supabase);
-    await this.upsertAttackSources(supabase);
-    await this.upsertAlerts(supabase);
-    await this.upsertLogs(supabase);
+  async rpcWithRetry(fn, params = {}, attempts = 3) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      const { error } = await this.supabase.rpc(fn, params);
+      if (!error) {
+        return;
+      }
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+    }
+    throw new Error(`${fn} RPC failed: ${lastError?.message || "unknown error"}`);
   }
 
-  async upsertThreatMetrics(supabase) {
-    const total = this.totalAlerts;
-    const critical = this.severityCounts.critical;
-    const recently = this.last24HoursCount;
-    const earlier = Math.max(total - recently, 0);
-    const changePercent = earlier
-      ? ((recently - earlier) / earlier) * 100
-      : recently
-      ? 100
-      : 0;
-    const meanResponse = this.responseCount > 0 ? this.responseSumMs / this.responseCount / 60000 : 0;
+  isMissingFunctionError(error) {
+    const text = String(error?.message || "").toLowerCase();
+    return text.includes("could not find the function") || text.includes("no function matches");
+  }
 
-    const metrics = [
-      {
-        label: "Total Alerts",
-        value: total,
-        change: Number(changePercent.toFixed(1)),
-        change_type: changePercent >= 0 ? "increase" : "decrease",
-      },
-      {
-        label: "Critical Incidents",
-        value: critical,
-        change: 0,
-        change_type: "increase",
-      },
-      {
-        label: "Active Investigations",
-        value: this.activeInvestigations,
-        change: 0,
-        change_type: "decrease",
-      },
-      {
-        label: "Mean Response Time",
-        value: Number(meanResponse.toFixed(1)),
-        change: Math.abs(changePercent),
-        change_type: changePercent >= 0 ? "increase" : "decrease",
-      },
+  async finalizeChunked() {
+    const params = { p_run_id: this.runId };
+    const steps = [
+      "ingest_start_publish",
+      "ingest_publish_logs",
+      "ingest_publish_alerts",
+      "ingest_publish_rollups",
+      "ingest_finish_publish",
     ];
 
-    await supabase.from("threat_metrics").upsert(metrics, { onConflict: "label" });
-  }
+    for (const step of steps) {
+      const { error } = await this.supabase.rpc(step, params);
+      if (!error) {
+        continue;
+      }
 
-  async upsertSeries(supabase) {
-    await supabase.from("alert_time_series").delete().neq("id", 0);
+      if (this.isMissingFunctionError(error)) {
+        throw error;
+      }
 
-    let anchor = new Date();
-    if (this.timeBuckets.size > 0) {
-      const latestKey = Array.from(this.timeBuckets.keys()).reduce((latest, current) =>
-        new Date(current) > new Date(latest) ? current : latest
-      );
-      anchor = new Date(latestKey);
-    }
-    anchor.setUTCMinutes(0, 0, 0);
-
-    const series = [];
-    for (let i = 23; i >= 0; i -= 1) {
-      const slot = new Date(anchor.getTime() - i * 60 * 60 * 1000);
-      const key = `${slot.toISOString().slice(0, 13)}:00:00Z`;
-      const bucket = this.timeBuckets.get(key) || { critical: 0, high: 0, medium: 0, low: 0 };
-      series.push({
-        time: key,
-        critical: bucket.critical,
-        high: bucket.high,
-        medium: bucket.medium,
-        low: bucket.low,
-      });
-    }
-
-    if (series.length) {
-      await supabase.from("alert_time_series").insert(series);
+      // Retry transient failures (timeouts/network) once per step using shared helper.
+      await this.rpcWithRetry(step, params, 2);
     }
   }
 
-  severityFill(name) {
-    const key = String(name || "").toLowerCase();
-    const palette = {
-      critical: "hsl(0, 72%, 51%)",
-      high: "hsl(38, 92%, 50%)",
-      medium: "hsl(199, 89%, 48%)",
-      low: "hsl(142, 71%, 45%)",
-    };
-    return palette[key] || "hsl(0, 0%, 50%)";
-  }
+  async finalize() {
+    if (!this.runId) {
+      throw new Error("No ingest run initialized");
+    }
 
-  async upsertSeverity(supabase) {
-    await supabase.from("severity_distribution").delete().neq("name", "");
+    await this.markRun("loaded", {
+      error_summary: this.rejectionSummary(),
+    });
 
-    const payload = Object.entries(this.severityCounts).map(([name, value]) => ({
-      name: name.charAt(0).toUpperCase() + name.slice(1),
-      value,
-      fill: this.severityFill(name),
-    }));
+    try {
+      await this.finalizeChunked();
+      return;
+    } catch (error) {
+      if (!this.isMissingFunctionError(error)) {
+        throw error;
+      }
+    }
 
-    if (payload.length) {
-      await supabase.from("severity_distribution").insert(payload);
+    const { error } = await this.supabase.rpc("finalize_ingest_run", { p_run_id: this.runId });
+    if (error) {
+      throw new Error(`finalize_ingest_run RPC failed: ${error.message}`);
     }
   }
 
-  async upsertAttackSources(supabase) {
-    const total = Math.max(this.totalAlerts, 1);
-    const sources = Array.from(this.attackCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 6)
-      .map(([country, count], index) => ({
-        country: country || `Source ${index + 1}`,
-        count,
-        percentage: Number(((count / total) * 100).toFixed(1)),
-      }));
-
-    await supabase.from("attack_sources").delete().neq("country", "");
-    if (sources.length) {
-      await supabase.from("attack_sources").insert(sources);
-    }
-  }
-
-  async upsertAlerts(supabase) {
-    await supabase.from("alerts").delete().neq("id", "");
-    if (this.alertRecords.length) {
-      await this.insertInBatches(supabase, "alerts", this.alertRecords, 100);
-    }
-  }
-
-  async upsertLogs(supabase) {
-    await supabase.from("logs").delete().neq("id", "");
-    if (this.logRecords.length) {
-      await this.insertInBatches(supabase, "logs", this.logRecords, 100);
-    }
+  async run() {
+    await this.startRun();
+    await this.ingestFiles();
+    await this.flushBatch();
+    await this.finalize();
   }
 }
 
@@ -749,28 +783,42 @@ async function loadEnv() {
     });
 }
 
-async function run() {
+async function main() {
   await loadEnv();
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
   if (!supabaseUrl || !serviceRoleKey) {
-    console.error("Supabase URL or service role key missing.");
-    process.exit(1);
+    throw new Error("Supabase URL or service role key missing.");
   }
 
   const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const ingestor = new DashboardIngestor();
-  await ingestor.ingestFiles();
-  await ingestor.persist(supabase);
+  const ingestor = new EtlV2Ingestor(supabase);
 
-  console.log(`Dashboard data refreshed with CSV values. Alerts=${ingestor.alertRecords.length}, Logs=${ingestor.logRecords.length}`);
+  try {
+    await ingestor.run();
+    console.log(`ETL v2 completed. runId=${ingestor.runId} rowsSeen=${ingestor.rowsSeen} rowsLoaded=${ingestor.rowsAccepted} rowsRejected=${ingestor.rowsRejected}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown ingest error";
+    if (ingestor.runId) {
+      try {
+        await ingestor.markRun("failed", {
+          finished_at: new Date().toISOString(),
+          error_summary: [ingestor.rejectionSummary(), message].filter(Boolean).join(" | "),
+        });
+      } catch {
+        // best effort run failure update
+      }
+    }
+    throw error;
+  }
 }
 
-run().catch((error) => {
-  console.error("Importer failed:", error);
+main().catch((error) => {
+  console.error("ETL v2 importer failed:", error);
   process.exit(1);
 });
