@@ -33,11 +33,11 @@ export function RecentAlerts({ alerts }: RecentAlertsProps) {
   const recentAlerts = alerts.slice(0, 5)
 
   return (
-    <Card className="bg-card border-border">
+    <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">Recent Alerts</CardTitle>
-          <Link href="/alerts" className="text-xs font-medium text-primary hover:underline">
+          <Link href="/alerts" className="text-xs font-medium text-primary transition-all hover:underline hover:opacity-80">
             View all
           </Link>
         </div>
@@ -49,10 +49,11 @@ export function RecentAlerts({ alerts }: RecentAlertsProps) {
               No recent alerts available.
             </div>
           )}
-          {recentAlerts.map((alert) => (
+          {recentAlerts.map((alert, index) => (
             <div
               key={alert.id}
-              className="flex items-start gap-3 rounded-lg border border-border bg-secondary/30 p-3 transition-colors hover:bg-secondary/50"
+              className="stagger-item hover-glow flex items-start gap-3 rounded-lg border border-border bg-secondary/30 p-3"
+              style={{ animationDelay: `${index * 55}ms` }}
             >
               <div className={cn("mt-0.5 h-2 w-2 shrink-0 rounded-full", {
                 "bg-destructive": alert.severity === "critical",

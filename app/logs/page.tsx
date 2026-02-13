@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Fragment, useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AppHeader } from "@/components/app-header"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -26,6 +26,7 @@ import {
 import type { LogEntry } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import { Search, Filter, RefreshCw, Download } from "lucide-react"
+import { formatEventFieldLabel, parseEventData, summarizeEventData } from "@/lib/event-data"
 
 const severityStyles: Record<string, string> = {
   critical: "bg-destructive/15 text-destructive border-destructive/30",
@@ -47,11 +48,25 @@ function formatTimestamp(timestamp: string) {
   })
 }
 
+function formatLogPreview(log: LogEntry) {
+  const preferred = log.summary?.trim() ?? ""
+  if (preferred) return preferred
+  const trimmed = log.message?.trim() ?? ""
+  if (!trimmed) return "No message provided."
+  return summarizeEventData(trimmed, { maxItems: 3, maxValueLength: 64 })
+    ?? "Event payload attached. Expand to view."
+}
+
 export default function LogsPage() {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [search, setSearch] = useState("")
   const [severityFilter, setSeverityFilter] = useState<string>("all")
   const [sourceFilter, setSourceFilter] = useState<string>("all")
+  const [noisyFilter, setNoisyFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const pageSize = 50
+  const [totalLogs, setTotalLogs] = useState(0)
+  const [sourceCounts, setSourceCounts] = useState<Array<{ source: string; count: number }>>([])
   const [expandedLog, setExpandedLog] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -62,12 +77,13 @@ export default function LogsPage() {
     async function loadLogs() {
       try {
         setIsLoading(true)
-        const response = await fetch("/api/logs", { signal: controller.signal })
+        const response = await fetch(`/api/logs?page=${page}&pageSize=${pageSize}`, { signal: controller.signal })
         if (!response.ok) {
           throw new Error(`Failed to load logs (${response.status})`)
         }
-        const payload = (await response.json()) as { logs: LogEntry[] }
+        const payload = (await response.json()) as { logs: LogEntry[]; total: number }
         setLogs(payload.logs)
+        setTotalLogs(payload.total ?? payload.logs.length)
         setLoadError(null)
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -83,9 +99,50 @@ export default function LogsPage() {
     loadLogs()
 
     return () => controller.abort()
+  }, [page])
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    async function loadSourceCounts() {
+      try {
+        const response = await fetch("/api/logs/sources?limit=25", { signal: controller.signal })
+        if (!response.ok) {
+          return
+        }
+        const payload = (await response.json()) as { sources: Array<{ source: string; count: number }> }
+        setSourceCounts(payload.sources ?? [])
+      } catch {
+        if (!controller.signal.aborted) {
+          setSourceCounts([])
+        }
+      }
+    }
+
+    loadSourceCounts()
+
+    return () => controller.abort()
   }, [])
 
-  const sources = Array.from(new Set(logs.map((l) => l.source)))
+  const sources = sourceCounts.length
+    ? sourceCounts.map((item) => item.source)
+    : Array.from(new Set(logs.map((l) => l.source)))
+
+  const topSources = (limit: number) => {
+    if (sourceCounts.length) {
+      return new Set(sourceCounts.slice(0, limit).map((item) => item.source))
+    }
+    const counts = new Map<string, number>()
+    logs.forEach((log) => {
+      counts.set(log.source, (counts.get(log.source) ?? 0) + 1)
+    })
+    return new Set(
+      Array.from(counts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, limit)
+        .map(([source]) => source)
+    )
+  }
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch =
@@ -95,8 +152,15 @@ export default function LogsPage() {
       log.ipAddress.toLowerCase().includes(search.toLowerCase())
     const matchesSeverity = severityFilter === "all" || log.severity === severityFilter
     const matchesSource = sourceFilter === "all" || log.source === sourceFilter
-    return matchesSearch && matchesSeverity && matchesSource
+    const matchesNoisy =
+      noisyFilter === "all" ||
+      (noisyFilter === "top5" && topSources(5).has(log.source)) ||
+      (noisyFilter === "top10" && topSources(10).has(log.source)) ||
+      (noisyFilter === "top20" && topSources(20).has(log.source))
+    return matchesSearch && matchesSeverity && matchesSource && matchesNoisy
   })
+
+  const totalPages = Math.max(Math.ceil(totalLogs / pageSize), 1)
 
   return (
     <DashboardLayout>
@@ -147,6 +211,17 @@ export default function LogsPage() {
                   ))}
                 </SelectContent>
               </Select>
+              <Select value={noisyFilter} onValueChange={setNoisyFilter}>
+                <SelectTrigger className="h-9 w-36 bg-secondary text-sm text-foreground">
+                  <SelectValue placeholder="Noisiest" />
+                </SelectTrigger>
+                <SelectContent className="bg-card text-foreground">
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="top5">Top 5 Sources</SelectItem>
+                  <SelectItem value="top10">Top 10 Sources</SelectItem>
+                  <SelectItem value="top20">Top 20 Sources</SelectItem>
+                </SelectContent>
+              </Select>
               <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground border-border bg-transparent">
                 <RefreshCw className="h-4 w-4" />
                 <span className="sr-only">Refresh logs</span>
@@ -161,10 +236,10 @@ export default function LogsPage() {
           {/* Log count */}
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              Showing {filteredLogs.length} of {logs.length} log entries
+              Showing {filteredLogs.length} of {totalLogs} log entries
             </span>
             <span className="text-xs text-muted-foreground">
-              Auto-refresh: 30s
+              Page {page} of {totalPages}
             </span>
           </div>
 
@@ -184,44 +259,121 @@ export default function LogsPage() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-border hover:bg-transparent">
-                    <TableHead className="w-[140px] text-muted-foreground text-xs">Timestamp</TableHead>
-                    <TableHead className="w-[80px] text-muted-foreground text-xs">Severity</TableHead>
-                    <TableHead className="w-[120px] text-muted-foreground text-xs">Source</TableHead>
-                    <TableHead className="text-muted-foreground text-xs">Message</TableHead>
-                    <TableHead className="w-[120px] text-muted-foreground text-xs">IP Address</TableHead>
-                    <TableHead className="w-[160px] text-muted-foreground text-xs">User</TableHead>
+                    <TableHead className="w-[160px] text-muted-foreground text-[11px] uppercase tracking-wide">
+                      Timestamp
+                    </TableHead>
+                    <TableHead className="w-[90px] text-muted-foreground text-[11px] uppercase tracking-wide">
+                      Severity
+                    </TableHead>
+                    <TableHead className="w-[160px] text-muted-foreground text-[11px] uppercase tracking-wide">
+                      Source
+                    </TableHead>
+                    <TableHead className="text-muted-foreground text-[11px] uppercase tracking-wide">
+                      Message
+                    </TableHead>
+                    <TableHead className="w-[140px] text-muted-foreground text-[11px] uppercase tracking-wide">
+                      IP Address
+                    </TableHead>
+                    <TableHead className="w-[180px] text-muted-foreground text-[11px] uppercase tracking-wide">
+                      User
+                    </TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredLogs.map((log) => (
-                    <TableRow
-                      key={log.id}
-                      className={cn(
-                        "border-border cursor-pointer transition-colors",
-                        expandedLog === log.id ? "bg-secondary/50" : "hover:bg-secondary/30"
-                      )}
-                      onClick={() => setExpandedLog(expandedLog === log.id ? null : log.id)}
-                    >
-                      <TableCell className="py-2.5 font-mono text-[11px] text-muted-foreground">
-                        {formatTimestamp(log.timestamp)}
-                      </TableCell>
-                      <TableCell className="py-2.5">
-                        <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[log.severity])}>
-                          {log.severity}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="py-2.5 text-xs text-foreground">{log.source}</TableCell>
-                      <TableCell className="py-2.5 text-xs text-foreground max-w-xs truncate font-mono">
-                        {log.message}
-                      </TableCell>
-                      <TableCell className="py-2.5 font-mono text-[11px] text-muted-foreground">
-                        {log.ipAddress}
-                      </TableCell>
-                      <TableCell className="py-2.5 text-xs text-muted-foreground truncate max-w-[160px]">
-                        {log.user}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                  {filteredLogs.map((log) => {
+                    const isExpanded = expandedLog === log.id
+                    const rawPayload = log.payloadRaw?.trim() || log.message
+                    const parsedEntries = log.parsedFieldsPreview?.length
+                      ? log.parsedFieldsPreview
+                      : (() => {
+                        const parsed = parseEventData(rawPayload)
+                        return parsed
+                          ? Object.entries(parsed).slice(0, 16).map(([key, value]) => ({
+                            key,
+                            label: formatEventFieldLabel(key),
+                            value,
+                          }))
+                          : []
+                      })()
+                    return (
+                      <Fragment key={log.id}>
+                        <TableRow
+                          key={log.id}
+                          className={cn(
+                            "border-border cursor-pointer transition-colors",
+                            isExpanded ? "bg-secondary/50" : "hover:bg-secondary/30"
+                          )}
+                          onClick={() => setExpandedLog(isExpanded ? null : log.id)}
+                        >
+                          <TableCell className="py-3 pr-2 font-mono text-[11px] text-muted-foreground">
+                            {formatTimestamp(log.timestamp)}
+                          </TableCell>
+                          <TableCell className="py-3 pr-2">
+                            <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[log.severity])}>
+                              {log.severity}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="py-3 pr-4 text-xs text-foreground leading-relaxed break-words">
+                            {log.source}
+                          </TableCell>
+                          <TableCell className="py-3 pr-4 text-xs text-foreground leading-relaxed break-words line-clamp-2">
+                            {formatLogPreview(log)}
+                          </TableCell>
+                          <TableCell className="py-3 pr-2 font-mono text-[11px] text-muted-foreground">
+                            {log.ipAddress}
+                          </TableCell>
+                          <TableCell className="py-3 text-xs text-muted-foreground break-words">
+                            {log.user}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow className="border-border bg-secondary/20">
+                            <TableCell colSpan={6} className="px-4 py-4">
+                              <div className="flex flex-col gap-3">
+                                <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                                  <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                    <div className="text-[10px] uppercase text-muted-foreground">Actor</div>
+                                    <div className="text-xs text-foreground break-words">{log.actor || log.user || "Unknown"}</div>
+                                  </div>
+                                  <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                    <div className="text-[10px] uppercase text-muted-foreground">IP Address</div>
+                                    <div className="text-xs text-foreground break-words">{log.ipAddress || "Unknown"}</div>
+                                  </div>
+                                  <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                    <div className="text-[10px] uppercase text-muted-foreground">Resource</div>
+                                    <div className="text-xs text-foreground break-words">{log.resource || "Unknown"}</div>
+                                  </div>
+                                  <div className="rounded-lg border border-border bg-card px-3 py-2">
+                                    <div className="text-[10px] uppercase text-muted-foreground">Status</div>
+                                    <div className="text-xs text-foreground break-words">{log.status}</div>
+                                  </div>
+                                </div>
+                                <div className="text-xs text-muted-foreground">Event Data</div>
+                                {parsedEntries.length > 0 && (
+                                  <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
+                                    {parsedEntries.map((field) => (
+                                      <div key={field.key} className="rounded-lg border border-border bg-card px-3 py-2">
+                                        <div className="text-[10px] uppercase text-muted-foreground">{field.label}</div>
+                                        <div className="text-xs text-foreground break-words">{field.value}</div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                                <details className="rounded-lg border border-border bg-card px-3 py-2">
+                                  <summary className="cursor-pointer text-[11px] text-muted-foreground">
+                                    Raw payload
+                                  </summary>
+                                  <div className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
+                                    {rawPayload}
+                                  </div>
+                                </details>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </Fragment>
+                    )
+                  })}
                 </TableBody>
               </Table>
               {!isLoading && filteredLogs.length === 0 && (
@@ -231,6 +383,29 @@ export default function LogsPage() {
               )}
             </CardContent>
           </Card>
+          <div className="flex items-center justify-between">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border"
+              onClick={() => setPage((current) => Math.max(current - 1, 1))}
+              disabled={page <= 1}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Showing {pageSize} per page
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-border"
+              onClick={() => setPage((current) => Math.min(current + 1, totalPages))}
+              disabled={page >= totalPages}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       </ScrollArea>
     </DashboardLayout>

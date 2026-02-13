@@ -18,7 +18,11 @@ export function MetricCards({ metrics }: MetricCardsProps) {
         const Icon = icons[index] ?? Activity
         const isNegativeChange = metric.changeType === "increase" && index !== 2
         return (
-          <Card key={metric.label} className="bg-card border-border">
+          <Card
+            key={metric.label}
+            className="interactive-surface hover-lift stagger-item border-border bg-card"
+            style={{ animationDelay: `${index * 60}ms` }}
+          >
             <CardContent className="p-4">
               <div className="flex items-start justify-between">
                 <div className="flex flex-col gap-1">
@@ -28,7 +32,7 @@ export function MetricCards({ metrics }: MetricCardsProps) {
                   </span>
                 </div>
                 <div className={cn(
-                  "flex h-9 w-9 items-center justify-center rounded-lg",
+                  "flex h-9 w-9 items-center justify-center rounded-lg transition-transform duration-300 ease-out hover:scale-110",
                   index === 0 && "bg-primary/10",
                   index === 1 && "bg-destructive/10",
                   index === 2 && "bg-[hsl(38,92%,50%)]/10",

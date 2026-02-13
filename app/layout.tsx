@@ -4,6 +4,7 @@ import { DM_Sans, DM_Mono } from 'next/font/google'
 
 import './globals.css'
 import { AuthProvider } from '@/components/auth/auth-provider'
+import { ThemeProvider } from '@/components/theme-provider'
 
 const _dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
 const _dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight: ['400', '500'] })
@@ -23,9 +24,16 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={`${_dmSans.variable} ${_dmMono.variable} font-sans antialiased`}>
-        <AuthProvider>{children}</AuthProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="theme-emerald"
+          enableSystem={false}
+          themes={["theme-emerald", "theme-forest", "theme-sand", "dark"]}
+        >
+          <AuthProvider>{children}</AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   )

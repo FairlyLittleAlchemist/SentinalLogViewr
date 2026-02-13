@@ -12,7 +12,7 @@ export function SeverityChart({ distribution }: SeverityChartProps) {
   const total = distribution.reduce((sum, item) => sum + item.value, 0)
 
   return (
-    <Card className="bg-card border-border">
+    <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
         <CardTitle className="text-sm font-semibold text-foreground">Severity Distribution</CardTitle>
       </CardHeader>
@@ -48,10 +48,14 @@ export function SeverityChart({ distribution }: SeverityChartProps) {
             </ResponsiveContainer>
           </div>
           <div className="flex flex-col gap-3">
-            {distribution.map((item) => (
-              <div key={item.name} className="flex items-center gap-3">
+            {distribution.map((item, index) => (
+              <div
+                key={item.name}
+                className="stagger-item flex items-center gap-3 rounded-md px-2 py-1 transition-colors hover:bg-secondary/40"
+                style={{ animationDelay: `${index * 55}ms` }}
+              >
                 <div
-                  className="h-2.5 w-2.5 rounded-full"
+                  className="h-2.5 w-2.5 rounded-full transition-transform duration-300 hover:scale-125"
                   style={{ backgroundColor: item.fill }}
                 />
                 <div className="flex flex-col">

@@ -22,7 +22,20 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import type { Alert } from "@/lib/mock-data"
+import { formatEventFieldLabel, parseEventData, summarizeEventData } from "@/lib/event-data"
 import { cn } from "@/lib/utils"
 import {
   Search,
@@ -70,14 +83,67 @@ function formatTimestamp(timestamp: string) {
   })
 }
 
+function formatAlertPreview(alert: Alert) {
+  const preferred = alert.summary?.trim() ?? ""
+  if (preferred) return preferred
+  const trimmed = alert.description?.trim() ?? ""
+  if (!trimmed) return "No description provided."
+  return summarizeEventData(trimmed, { maxItems: 3, maxValueLength: 64 })
+    ?? "Event payload attached. Open to view details."
+}
+
+function formatAlertTitle(title: string) {
+  const trimmed = title?.trim() ?? ""
+  if (!trimmed) return "Event"
+  if (trimmed.includes("/") && trimmed === trimmed.toUpperCase()) {
+    const tokens = trimmed.split("/").filter(Boolean)
+    const last = tokens[tokens.length - 2] ?? tokens[tokens.length - 1] ?? trimmed
+    return last
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[_-]+/g, " ")
+      .toLowerCase()
+      .replace(/^./, (ch) => ch.toUpperCase())
+  }
+  return trimmed
+}
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [search, setSearch] = useState("")
   const [severityFilter, setSeverityFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [page, setPage] = useState(1)
+  const pageSize = 50
+  const [totalAlerts, setTotalAlerts] = useState(0)
   const [selectedAlert, setSelectedAlert] = useState<Alert | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const rawDescription = (selectedAlert?.payloadRaw ?? selectedAlert?.description ?? "").trim()
+  const hasStructuredPayload =
+    (rawDescription.startsWith("{") && rawDescription.endsWith("}")) ||
+    (rawDescription.startsWith("[") && rawDescription.endsWith("]")) ||
+    (rawDescription.includes("<") && rawDescription.includes(">"))
+  const headerDescription = selectedAlert?.summary?.trim()
+    ? selectedAlert.summary
+    : rawDescription
+      ? hasStructuredPayload
+        ? "Event payload attached. See Event Data for details."
+        : rawDescription.length > 160
+          ? `${rawDescription.slice(0, 160)}...`
+          : rawDescription
+      : "No description provided."
+  const parsedEntries = selectedAlert?.parsedFieldsPreview?.length
+    ? selectedAlert.parsedFieldsPreview
+    : (() => {
+      const parsedEventData = selectedAlert ? parseEventData(rawDescription) : null
+      return parsedEventData
+        ? Object.entries(parsedEventData).slice(0, 16).map(([key, value]) => ({
+          key,
+          label: formatEventFieldLabel(key),
+          value,
+        }))
+        : []
+    })()
 
   useEffect(() => {
     const controller = new AbortController()
@@ -85,12 +151,13 @@ export default function AlertsPage() {
     async function loadAlerts() {
       try {
         setIsLoading(true)
-        const response = await fetch("/api/alerts", { signal: controller.signal })
+        const response = await fetch(`/api/alerts?page=${page}&pageSize=${pageSize}`, { signal: controller.signal })
         if (!response.ok) {
           throw new Error(`Failed to load alerts (${response.status})`)
         }
-        const payload = (await response.json()) as { alerts: Alert[] }
+        const payload = (await response.json()) as { alerts: Alert[]; total: number }
         setAlerts(payload.alerts)
+        setTotalAlerts(payload.total ?? payload.alerts.length)
         setLoadError(null)
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -106,7 +173,7 @@ export default function AlertsPage() {
     loadAlerts()
 
     return () => controller.abort()
-  }, [])
+  }, [page])
 
   const filteredAlerts = alerts.filter((alert) => {
     const matchesSearch =
@@ -117,6 +184,7 @@ export default function AlertsPage() {
     const matchesStatus = statusFilter === "all" || alert.status === statusFilter
     return matchesSearch && matchesSeverity && matchesStatus
   })
+  const totalPages = Math.max(Math.ceil(totalAlerts / pageSize), 1)
 
   return (
     <DashboardLayout>
@@ -234,13 +302,15 @@ export default function AlertsPage() {
                                 {alert.severity}
                               </Badge>
                             </div>
-                            <h3 className="text-sm font-medium text-foreground">{alert.title}</h3>
+                            <h3 className="text-sm font-medium text-foreground">{formatAlertTitle(alert.title)}</h3>
                           </div>
                           <Button variant="ghost" size="sm" className="shrink-0 text-muted-foreground">
                             <ChevronRight className="h-4 w-4" />
                           </Button>
                         </div>
-                        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">{alert.description}</p>
+                        <p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+                          {formatAlertPreview(alert)}
+                        </p>
                         <div className="flex flex-wrap items-center gap-3 text-[10px] text-muted-foreground">
                           <div className="flex items-center gap-1">
                             <StatusIcon className="h-3 w-3" />
@@ -254,6 +324,11 @@ export default function AlertsPage() {
                             <Target className="h-3 w-3" />
                             <span>{alert.source}</span>
                           </div>
+                          {alert.eventCode && (
+                            <div className="flex items-center gap-1">
+                              <span className="font-mono">{alert.eventCode}</span>
+                            </div>
+                          )}
                           {alert.assignee && (
                             <div className="flex items-center gap-1">
                               <User className="h-3 w-3" />
@@ -276,6 +351,34 @@ export default function AlertsPage() {
               </Card>
             )}
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">
+              Showing {filteredAlerts.length} of {totalAlerts} alerts
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border"
+                onClick={() => setPage((current) => Math.max(current - 1, 1))}
+                disabled={page <= 1}
+              >
+                Previous
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Page {page} of {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-border"
+                onClick={() => setPage((current) => Math.min(current + 1, totalPages))}
+                disabled={page >= totalPages}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </div>
       </ScrollArea>
 
@@ -291,83 +394,140 @@ export default function AlertsPage() {
                     {selectedAlert.severity}
                   </Badge>
                 </div>
-                <DialogTitle className="text-foreground">{selectedAlert.title}</DialogTitle>
-                <DialogDescription className="text-muted-foreground">{selectedAlert.description}</DialogDescription>
+                <DialogTitle className="text-foreground">{formatAlertTitle(selectedAlert.title)}</DialogTitle>
+                <DialogDescription className="text-muted-foreground">{headerDescription}</DialogDescription>
               </DialogHeader>
 
-              <div className="flex flex-col gap-4 mt-4">
-                {/* Details grid */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">Source</span>
-                    <span className="text-xs font-medium text-foreground">{selectedAlert.source}</span>
-                  </div>
-                  <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">Status</span>
-                    <span className="text-xs font-medium text-foreground">{statusLabels[selectedAlert.status]}</span>
-                  </div>
-                  <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">Assignee</span>
-                    <span className="text-xs font-medium text-foreground">{selectedAlert.assignee || "Unassigned"}</span>
-                  </div>
-                  <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground">Time</span>
-                    <span className="text-xs font-medium text-foreground">{formatTimestamp(selectedAlert.timestamp)}</span>
-                  </div>
-                </div>
-
-                {/* MITRE Tactics */}
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-semibold uppercase text-muted-foreground">MITRE ATT&CK Tactics</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedAlert.tactics.map((tactic) => (
-                      <Badge key={tactic} variant="outline" className="text-[10px] text-foreground border-border">
-                        {tactic}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Affected Entities */}
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-semibold uppercase text-muted-foreground">Affected Entities</h4>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedAlert.affectedEntities.map((entity) => (
-                      <Badge key={entity} className="bg-secondary text-[10px] text-foreground border-border">
-                        {entity}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Recommended Actions */}
-                <div className="flex flex-col gap-2">
-                  <h4 className="text-xs font-semibold uppercase text-muted-foreground">Recommended Actions</h4>
-                  <div className="flex flex-col gap-2">
-                    {selectedAlert.recommendedActions.map((action, idx) => (
-                      <div key={idx} className="flex items-start gap-2 rounded-lg border border-border bg-secondary/30 p-3">
-                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
-                          {idx + 1}
-                        </div>
-                        <span className="text-xs leading-relaxed text-foreground">{action}</span>
+              <Tabs defaultValue="summary" className="mt-4">
+                <TabsList className="grid w-full grid-cols-2 bg-secondary/60">
+                  <TabsTrigger value="summary">Summary</TabsTrigger>
+                  <TabsTrigger value="event">Event Data</TabsTrigger>
+                </TabsList>
+                <TabsContent value="summary" className="mt-4">
+                  <div className="flex flex-col gap-4">
+                    {/* Details grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Source</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.source}</span>
                       </div>
-                    ))}
-                  </div>
-                </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Status</span>
+                        <span className="text-xs font-medium text-foreground">{statusLabels[selectedAlert.status]}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Assignee</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.assignee || "Unassigned"}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Time</span>
+                        <span className="text-xs font-medium text-foreground">{formatTimestamp(selectedAlert.timestamp)}</span>
+                      </div>
+                    </div>
 
-                {/* Action buttons */}
-                <div className="flex items-center gap-2 pt-2">
-                  <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
-                    Investigate
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-foreground border-border bg-transparent">
-                    Assign
-                  </Button>
-                  <Button size="sm" variant="outline" className="text-foreground border-border bg-transparent">
-                    Dismiss
-                  </Button>
-                </div>
-              </div>
+                    {/* MITRE Tactics */}
+                    <div className="flex flex-col gap-2">
+                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">MITRE ATT&CK Tactics</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAlert.tactics.map((tactic) => (
+                          <Badge key={tactic} variant="outline" className="text-[10px] text-foreground border-border">
+                            {tactic}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Affected Entities */}
+                    <div className="flex flex-col gap-2">
+                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Affected Entities</h4>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedAlert.affectedEntities.map((entity) => (
+                          <Badge key={entity} className="bg-secondary text-[10px] text-foreground border-border">
+                            {entity}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Recommended Actions */}
+                    <div className="flex flex-col gap-2">
+                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Recommended Actions</h4>
+                      <div className="flex flex-col gap-2">
+                        {selectedAlert.recommendedActions.map((action, idx) => (
+                          <div key={idx} className="flex items-start gap-2 rounded-lg border border-border bg-secondary/30 p-3">
+                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
+                              {idx + 1}
+                            </div>
+                            <span className="text-xs leading-relaxed text-foreground">{action}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
+                        Investigate
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-foreground border-border bg-transparent">
+                        Assign
+                      </Button>
+                      <Button size="sm" variant="outline" className="text-foreground border-border bg-transparent">
+                        Dismiss
+                      </Button>
+                    </div>
+                  </div>
+                </TabsContent>
+                <TabsContent value="event" className="mt-4">
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Actor</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.actor || selectedAlert.assignee || "Unknown"}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">IP Address</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.ipAddress || "Unknown"}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Resource</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.resource || "Unknown"}</span>
+                      </div>
+                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Category</span>
+                        <span className="text-xs font-medium text-foreground">{selectedAlert.category || "Unknown"}</span>
+                      </div>
+                    </div>
+                    {parsedEntries.length > 0 ? (
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                        {parsedEntries.map((field) => (
+                          <div key={field.key} className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">{field.label}</div>
+                            <div className="text-xs text-foreground break-words line-clamp-2" title={field.value}>
+                              {field.value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+                        No parsed event fields available.
+                      </div>
+                    )}
+
+                    <Accordion type="single" collapsible className="w-full">
+                      <AccordionItem value="raw">
+                        <AccordionTrigger className="text-xs">Raw Payload</AccordionTrigger>
+                        <AccordionContent>
+                          <div className="rounded-lg border border-border bg-secondary/30 p-3 text-[11px] text-muted-foreground whitespace-pre-wrap font-mono max-h-64 overflow-auto">
+                            {rawDescription || "No event payload available."}
+                          </div>
+                        </AccordionContent>
+                      </AccordionItem>
+                    </Accordion>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </>
           )}
         </DialogContent>

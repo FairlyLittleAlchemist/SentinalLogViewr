@@ -74,35 +74,39 @@ export default function DashboardPage() {
       <AppHeader title="Security Overview" />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 p-4 lg:p-6">
-          <div className="flex flex-col gap-1">
+          <div className="animate-pop-in flex flex-col gap-1">
             <h2 className="text-lg font-semibold text-foreground">Threat Intelligence Dashboard</h2>
             <p className="text-sm text-muted-foreground">
               Real-time security monitoring and threat detection for your Azure environment.
             </p>
           </div>
           {loadError && (
-            <div className="rounded-lg border border-border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
+            <div className="animate-slide-up rounded-lg border border-border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
               {loadError}
             </div>
           )}
           {isLoading ? (
-            <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
+            <div className="animate-slide-up rounded-lg border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
               Loading dashboard stats...
             </div>
           ) : (
             <MetricCards metrics={dashboardData.threatMetrics} />
           )}
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div className="xl:col-span-2">
+            <div className="stagger-item xl:col-span-2" style={{ animationDelay: "90ms" }}>
               <AlertsChart series={dashboardData.alertTimeSeries} />
             </div>
-            <SeverityChart distribution={dashboardData.severityDistribution} />
+            <div className="stagger-item" style={{ animationDelay: "140ms" }}>
+              <SeverityChart distribution={dashboardData.severityDistribution} />
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-            <div className="xl:col-span-2">
+            <div className="stagger-item xl:col-span-2" style={{ animationDelay: "180ms" }}>
               <RecentAlerts alerts={dashboardData.recentAlerts} />
             </div>
-            <AttackSources sources={dashboardData.topAttackSources} />
+            <div className="stagger-item" style={{ animationDelay: "230ms" }}>
+              <AttackSources sources={dashboardData.topAttackSources} />
+            </div>
           </div>
         </div>
       </ScrollArea>

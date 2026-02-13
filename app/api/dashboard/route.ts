@@ -52,11 +52,23 @@ export async function GET() {
     low: point.low,
   }))
 
-  const severityDistribution = (distributionResult.data ?? []).map((item) => ({
-    name: item.name,
-    value: item.value,
-    fill: item.fill,
-  }))
+  const severityMap = new Map<string, { name: string; value: number; fill: string }>()
+  for (const item of distributionResult.data ?? []) {
+    const key = String(item.name || "").toLowerCase()
+    if (!key) continue
+    const label = key.charAt(0).toUpperCase() + key.slice(1)
+    const current = severityMap.get(key)
+    if (current) {
+      current.value += Number(item.value)
+    } else {
+      severityMap.set(key, {
+        name: label,
+        value: Number(item.value),
+        fill: item.fill,
+      })
+    }
+  }
+  const severityDistribution = Array.from(severityMap.values())
 
   const topAttackSources = (sourcesResult.data ?? []).map((item) => ({
     country: item.country,

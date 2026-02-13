@@ -10,6 +10,17 @@ export interface LogEntry {
   ipAddress: string
   user: string
   status: "new" | "investigating" | "resolved" | "dismissed"
+  payloadRaw?: string | null
+  payloadJson?: Record<string, unknown> | null
+  provider?: string | null
+  eventCode?: string | null
+  eventName?: string | null
+  actor?: string | null
+  resource?: string | null
+  sourceFile?: string | null
+  payloadKind?: "json" | "xml" | "kv" | "text" | "empty"
+  summary?: string
+  parsedFieldsPreview?: Array<{ key: string; label: string; value: string }>
 }
 
 export interface Alert {
@@ -24,6 +35,19 @@ export interface Alert {
   tactics: string[]
   affectedEntities: string[]
   recommendedActions: string[]
+  payloadRaw?: string | null
+  payloadJson?: Record<string, unknown> | null
+  provider?: string | null
+  category?: string | null
+  eventCode?: string | null
+  eventName?: string | null
+  actor?: string | null
+  resource?: string | null
+  ipAddress?: string | null
+  sourceFile?: string | null
+  payloadKind?: "json" | "xml" | "kv" | "text" | "empty"
+  summary?: string
+  parsedFieldsPreview?: Array<{ key: string; label: string; value: string }>
 }
 
 export interface ThreatMetric {

@@ -27,6 +27,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ThemeSwitcher } from "@/components/theme-switcher"
 
 export function AppHeader({ title }: { title: string }) {
   const pathname = usePathname()
@@ -42,11 +43,11 @@ export function AppHeader({ title }: { title: string }) {
     .toUpperCase()
 
   return (
-    <header className="flex h-14 items-center justify-between border-b border-border bg-card px-4 lg:px-6">
+    <header className="sticky top-0 z-20 flex h-14 items-center justify-between border-b border-border/80 bg-card/85 px-4 backdrop-blur-md lg:px-6">
       <div className="flex items-center gap-3">
         <Sheet>
           <SheetTrigger asChild>
-            <Button variant="ghost" size="icon" className="lg:hidden text-muted-foreground">
+            <Button variant="ghost" size="icon" className="hover-glow lg:hidden text-muted-foreground">
               <Menu className="h-5 w-5" />
               <span className="sr-only">Open menu</span>
             </Button>
@@ -87,17 +88,18 @@ export function AppHeader({ title }: { title: string }) {
             </nav>
           </SheetContent>
         </Sheet>
-        <h1 className="text-sm font-semibold text-foreground lg:text-base">{title}</h1>
+        <h1 className="animate-fade-in text-sm font-semibold text-foreground lg:text-base">{title}</h1>
       </div>
       <div className="flex items-center gap-2">
         <div className="relative hidden md:block">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Search logs, alerts..."
-            className="h-8 w-64 bg-secondary pl-8 text-sm text-foreground placeholder:text-muted-foreground"
+            className="h-8 w-64 bg-secondary pl-8 text-sm text-foreground placeholder:text-muted-foreground transition-all duration-300 focus-visible:ring-primary/40"
           />
         </div>
-        <Button variant="ghost" size="icon" className="relative text-muted-foreground">
+        <ThemeSwitcher />
+        <Button variant="ghost" size="icon" className="hover-glow relative text-muted-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
             3
@@ -106,7 +108,7 @@ export function AppHeader({ title }: { title: string }) {
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-muted-foreground">
+            <Button variant="ghost" size="icon" className="hover-glow text-muted-foreground">
               {loading ? (
                 <UserCircle className="h-5 w-5" />
               ) : (

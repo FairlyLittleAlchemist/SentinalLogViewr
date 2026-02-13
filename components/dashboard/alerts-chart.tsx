@@ -18,12 +18,25 @@ interface AlertsChartProps {
 }
 
 export function AlertsChart({ series }: AlertsChartProps) {
+  const formatHour = (value: string) => {
+    if (!value) return ""
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+  }
+
+  const formatTooltipLabel = (value: string) => {
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return value
+    return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+  }
+
   return (
-    <Card className="bg-card border-border">
+    <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-semibold text-foreground">Alert Trend (24h)</CardTitle>
-          <span className="text-xs text-muted-foreground">Last 24 hours</span>
+          <span className="text-xs text-muted-foreground">Last 24 hours (data)</span>
         </div>
       </CardHeader>
       <CardContent className="p-4 pt-0">
@@ -48,26 +61,28 @@ export function AlertsChart({ series }: AlertsChartProps) {
                   <stop offset="95%" stopColor="hsl(142, 71%, 45%)" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(222, 30%, 16%)" />
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
               <XAxis
                 dataKey="time"
                 tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 11 }}
-                axisLine={{ stroke: "hsl(222, 30%, 16%)" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
                 tickLine={false}
+                tickFormatter={formatHour}
               />
               <YAxis
                 tick={{ fill: "hsl(215, 20%, 55%)", fontSize: 11 }}
-                axisLine={{ stroke: "hsl(222, 30%, 16%)" }}
+                axisLine={{ stroke: "hsl(var(--border))" }}
                 tickLine={false}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "hsl(222, 47%, 8%)",
-                  border: "1px solid hsl(222, 30%, 16%)",
+                  backgroundColor: "hsl(var(--card))",
+                  border: "1px solid hsl(var(--border))",
                   borderRadius: "8px",
-                  color: "hsl(210, 40%, 95%)",
+                  color: "hsl(var(--foreground))",
                   fontSize: "12px",
                 }}
+                labelFormatter={formatTooltipLabel}
               />
               <Legend
                 wrapperStyle={{ fontSize: "11px", color: "hsl(215, 20%, 55%)" }}

@@ -28,7 +28,7 @@ export function AppSidebar() {
   return (
     <aside
       className={cn(
-        "flex flex-col border-r border-border bg-sidebar transition-all duration-300",
+        "flex flex-col border-r border-border/80 bg-sidebar/95 backdrop-blur-sm transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
@@ -52,7 +52,7 @@ export function AppSidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                "interactive-surface flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-[background-color,color,transform,box-shadow] duration-200 ease-out hover:translate-x-0.5 hover:shadow-sm",
                 isActive
                   ? "bg-primary/10 text-primary"
                   : "text-muted-foreground hover:bg-secondary hover:text-foreground"
@@ -105,7 +105,7 @@ export function AppSidebar() {
             <div className="flex flex-col">
               <span className="text-xs font-medium text-foreground">{displayName}</span>
               <span className="text-[10px] text-muted-foreground">
-                {user?.email ?? "—"} • {roleLabels[role]}
+                {user?.email ?? "-"} | {roleLabels[role]}
               </span>
             </div>
           </div>

@@ -6,55 +6,289 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  .animate-fade-in {
+    animation: fade-in 300ms ease-out both;
+  }
+
+  .animate-slide-up {
+    animation: slide-up 360ms ease-out both;
+  }
+
+  .animate-pop-in {
+    animation: pop-in 440ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .hover-lift {
+    transition:
+      transform 260ms cubic-bezier(0.22, 1, 0.36, 1),
+      box-shadow 280ms ease,
+      border-color 240ms ease,
+      background-color 240ms ease;
+  }
+
+  .hover-lift:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 14px 34px hsl(var(--foreground) / 0.08);
+    border-color: hsl(var(--primary) / 0.35);
+  }
+
+  .hover-glow {
+    transition: box-shadow 280ms ease, transform 240ms ease;
+  }
+
+  .hover-glow:hover {
+    transform: translateY(-1px);
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.2),
+      0 8px 28px hsl(var(--primary) / 0.18);
+  }
+
+  .stagger-item {
+    opacity: 0;
+    animation: slide-up 420ms ease-out forwards;
+  }
+
+  .interactive-surface {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .interactive-surface::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 260ms ease;
+    background:
+      radial-gradient(circle at 12% 10%, hsl(var(--primary) / 0.15), transparent 35%),
+      radial-gradient(circle at 82% 92%, hsl(var(--accent) / 0.16), transparent 38%);
+  }
+
+  .interactive-surface:hover::before {
+    opacity: 1;
+  }
 }
 
 @layer base {
   :root {
-    --background: 150 25% 97%;
-    --foreground: 160 20% 12%;
-    --card: 150 20% 99%;
-    --card-foreground: 160 18% 12%;
-    --popover: 150 20% 99%;
-    --popover-foreground: 160 18% 12%;
-    --primary: 148 40% 36%;
+    --background: 146 24% 96%;
+    --foreground: 158 22% 14%;
+    --card: 146 22% 99%;
+    --card-foreground: 158 20% 14%;
+    --popover: 146 22% 99%;
+    --popover-foreground: 158 20% 14%;
+    --primary: 150 44% 34%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 150 22% 92%;
-    --secondary-foreground: 160 18% 18%;
-    --muted: 150 18% 94%;
-    --muted-foreground: 160 10% 40%;
-    --accent: 148 35% 42%;
+    --secondary: 148 18% 92%;
+    --secondary-foreground: 158 20% 20%;
+    --muted: 148 18% 94%;
+    --muted-foreground: 158 10% 41%;
+    --accent: 153 39% 40%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 60% 48%;
+    --destructive: 0 67% 50%;
     --destructive-foreground: 0 0% 100%;
-    --border: 150 14% 88%;
-    --input: 150 14% 88%;
-    --ring: 148 40% 36%;
-    --chart-1: 148 40% 36%;
-    --chart-2: 164 32% 44%;
-    --chart-3: 36 60% 48%;
-    --chart-4: 0 60% 48%;
-    --chart-5: 200 28% 42%;
-    --radius: 0.6rem;
-    --sidebar-background: 150 25% 96%;
-    --sidebar-foreground: 160 18% 18%;
-    --sidebar-primary: 148 40% 36%;
+    --border: 150 14% 86%;
+    --input: 150 14% 86%;
+    --ring: 150 44% 34%;
+    --chart-1: 150 44% 34%;
+    --chart-2: 164 34% 42%;
+    --chart-3: 36 74% 52%;
+    --chart-4: 0 67% 50%;
+    --chart-5: 205 35% 43%;
+    --radius: 0.75rem;
+    --sidebar-background: 146 23% 95%;
+    --sidebar-foreground: 158 20% 17%;
+    --sidebar-primary: 150 44% 34%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 150 22% 92%;
-    --sidebar-accent-foreground: 160 18% 18%;
-    --sidebar-border: 150 16% 88%;
-    --sidebar-ring: 148 40% 36%;
-    --warning: 36 70% 52%;
+    --sidebar-accent: 146 20% 91%;
+    --sidebar-accent-foreground: 158 20% 20%;
+    --sidebar-border: 150 16% 86%;
+    --sidebar-ring: 150 44% 34%;
+    --warning: 36 76% 52%;
     --warning-foreground: 0 0% 100%;
-    --success: 148 40% 36%;
+    --success: 150 44% 34%;
     --success-foreground: 0 0% 100%;
+  }
+
+  .theme-forest {
+    --background: 124 24% 95%;
+    --foreground: 140 24% 14%;
+    --card: 124 20% 98%;
+    --card-foreground: 140 24% 14%;
+    --popover: 124 20% 98%;
+    --popover-foreground: 140 24% 14%;
+    --primary: 135 45% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 130 16% 90%;
+    --secondary-foreground: 140 20% 20%;
+    --muted: 130 15% 92%;
+    --muted-foreground: 140 10% 38%;
+    --accent: 144 34% 38%;
+    --accent-foreground: 0 0% 100%;
+    --border: 130 13% 82%;
+    --input: 130 13% 82%;
+    --ring: 135 45% 30%;
+    --chart-1: 135 45% 30%;
+    --chart-2: 154 38% 38%;
+    --chart-3: 40 74% 50%;
+    --chart-4: 2 68% 50%;
+    --chart-5: 200 35% 43%;
+    --sidebar-background: 124 20% 93%;
+    --sidebar-foreground: 140 20% 16%;
+    --sidebar-primary: 135 45% 30%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 130 16% 89%;
+    --sidebar-accent-foreground: 140 20% 16%;
+    --sidebar-border: 130 13% 82%;
+    --sidebar-ring: 135 45% 30%;
+    --success: 135 45% 30%;
+  }
+
+  .theme-sand {
+    --background: 45 38% 95%;
+    --foreground: 30 23% 17%;
+    --card: 44 33% 98%;
+    --card-foreground: 30 23% 17%;
+    --popover: 44 33% 98%;
+    --popover-foreground: 30 23% 17%;
+    --primary: 27 60% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 45 25% 90%;
+    --secondary-foreground: 30 20% 22%;
+    --muted: 45 24% 92%;
+    --muted-foreground: 30 12% 41%;
+    --accent: 35 57% 47%;
+    --accent-foreground: 0 0% 100%;
+    --border: 40 18% 82%;
+    --input: 40 18% 82%;
+    --ring: 27 60% 42%;
+    --chart-1: 27 60% 42%;
+    --chart-2: 15 55% 46%;
+    --chart-3: 198 44% 42%;
+    --chart-4: 0 70% 52%;
+    --chart-5: 150 36% 34%;
+    --sidebar-background: 45 30% 93%;
+    --sidebar-foreground: 30 20% 20%;
+    --sidebar-primary: 27 60% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 45 24% 89%;
+    --sidebar-accent-foreground: 30 20% 20%;
+    --sidebar-border: 40 18% 82%;
+    --sidebar-ring: 27 60% 42%;
+    --success: 150 36% 34%;
+  }
+
+  .dark {
+    --background: 156 18% 10%;
+    --foreground: 148 16% 92%;
+    --card: 156 16% 13%;
+    --card-foreground: 148 16% 92%;
+    --popover: 156 16% 13%;
+    --popover-foreground: 148 16% 92%;
+    --primary: 150 46% 48%;
+    --primary-foreground: 156 18% 8%;
+    --secondary: 156 11% 18%;
+    --secondary-foreground: 148 12% 88%;
+    --muted: 156 11% 18%;
+    --muted-foreground: 148 8% 66%;
+    --accent: 164 38% 44%;
+    --accent-foreground: 156 18% 8%;
+    --destructive: 0 70% 54%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 156 8% 24%;
+    --input: 156 8% 24%;
+    --ring: 150 46% 48%;
+    --chart-1: 150 46% 48%;
+    --chart-2: 166 34% 50%;
+    --chart-3: 38 76% 56%;
+    --chart-4: 0 70% 54%;
+    --chart-5: 204 52% 54%;
+    --sidebar-background: 156 15% 12%;
+    --sidebar-foreground: 148 12% 90%;
+    --sidebar-primary: 150 46% 48%;
+    --sidebar-primary-foreground: 156 18% 8%;
+    --sidebar-accent: 156 10% 18%;
+    --sidebar-accent-foreground: 148 12% 90%;
+    --sidebar-border: 156 8% 24%;
+    --sidebar-ring: 150 46% 48%;
+    --warning: 38 76% 56%;
+    --success: 150 46% 48%;
+  }
+
+  * {
+    @apply border-border selection:bg-primary/20 selection:text-foreground;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-image:
+      radial-gradient(circle at 20% -10%, hsl(var(--primary) / 0.15), transparent 35%),
+      radial-gradient(circle at 90% 0%, hsl(var(--accent) / 0.1), transparent 30%);
+    background-attachment: fixed;
+  }
+
+  main {
+    animation: fade-in 360ms ease-out both;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: hsl(var(--border));
+    border: 2px solid hsl(var(--background));
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+      scroll-behavior: auto !important;
+    }
   }
 }
 
-@layer base {
-  * {
-    @apply border-border;
+@keyframes fade-in {
+  from {
+    opacity: 0;
   }
-  body {
-    @apply bg-background text-foreground;
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
   }
 }
