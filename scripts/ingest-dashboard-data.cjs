@@ -439,8 +439,24 @@ class EtlV2Ingestor {
       }
     }
 
+    if (fallback && String(fallback).trim()) {
+      const cleanFallback = String(fallback).replace(/\s+/g, " ").trim();
+      if (cleanFallback) return cleanFallback.slice(0, 220);
+    }
+
     if (payloadRaw) {
-      return String(payloadRaw).replace(/\s+/g, " ").slice(0, 220);
+      const compact = String(payloadRaw).replace(/\s+/g, " ").trim();
+      const parsed = this.safeJsonParse(compact);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const msg = this.getField(
+          Object.fromEntries(Object.entries(parsed).map(([k, v]) => [String(k).toLowerCase(), String(v ?? "")])),
+          ["message", "description", "title", "incidentname", "activity"]
+        );
+        if (msg) return String(msg).slice(0, 220);
+      }
+      if (!(compact.startsWith("{") && compact.endsWith("}")) && !(compact.startsWith("[") && compact.endsWith("]"))) {
+        return compact.slice(0, 220);
+      }
     }
 
     return fallback || "No description provided.";
@@ -469,7 +485,9 @@ class EtlV2Ingestor {
       ""
     ).trim();
 
-    return { assignee, actor };
+    const cleanAssignee = (assignee && assignee.toLowerCase() !== "null" && assignee.toLowerCase() !== "undefined") ? assignee : "";
+    const cleanActor = (actor && actor.toLowerCase() !== "null" && actor.toLowerCase() !== "undefined") ? actor : "";
+    return { assignee: cleanAssignee, actor: cleanActor };
   }
 
   formatProviderLabel(provider) {

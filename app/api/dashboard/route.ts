@@ -3,6 +3,42 @@ import { createClient } from "@/lib/supabase/server"
 
 export const dynamic = "force-dynamic"
 
+function safeParseJson(value: string) {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return null
+  }
+}
+
+function normalizeAssignee(value: unknown): string | null {
+  if (value === null || value === undefined) return null
+  const raw = String(value).trim()
+  if (!raw || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") return null
+
+  const parsed = safeParseJson(raw)
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const record = parsed as Record<string, unknown>
+    const principal = [
+      record.assignedTo,
+      record.userPrincipalName,
+      record.email,
+      record.name,
+      record.displayName,
+      record.objectId,
+    ]
+      .map((entry) => String(entry ?? "").trim())
+      .find((entry) => entry && entry.toLowerCase() !== "null" && entry.toLowerCase() !== "undefined")
+    return principal || null
+  }
+
+  if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
+    return null
+  }
+
+  return raw
+}
+
 export async function GET() {
   const supabase = await createClient()
   const {
@@ -36,6 +72,17 @@ export async function GET() {
   ) {
     return NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 })
   }
+
+  const recentAlertIds = (alertsResult.data ?? []).map((alert) => alert.id)
+  const { data: overrides, error: overridesError } = recentAlertIds.length
+    ? await supabase.from("alert_overrides").select("alert_id,status,assignee").in("alert_id", recentAlertIds)
+    : { data: [], error: null }
+
+  if (overridesError) {
+    return NextResponse.json({ error: "Failed to load dashboard data" }, { status: 500 })
+  }
+
+  const overrideMap = new Map((overrides ?? []).map((item) => [item.alert_id, item]))
 
   const threatMetrics = (metricsResult.data ?? []).map((item) => ({
     label: item.label,
@@ -76,19 +123,23 @@ export async function GET() {
     percentage: Number(item.percentage),
   }))
 
-  const recentAlerts = (alertsResult.data ?? []).map((alert) => ({
-    id: alert.id,
-    title: alert.title,
-    severity: alert.severity,
-    status: alert.status,
-    source: alert.source,
-    timestamp: alert.timestamp,
-    description: alert.description,
-    assignee: alert.assignee,
-    tactics: alert.tactics,
-    affectedEntities: alert.affected_entities,
-    recommendedActions: alert.recommended_actions,
-  }))
+  const recentAlerts = (alertsResult.data ?? []).map((alert) => {
+    const override = overrideMap.get(alert.id)
+    return {
+      statusSource: override?.status || override?.assignee ? ("analyst" as const) : ("detected" as const),
+      id: alert.id,
+      title: alert.title,
+      severity: alert.severity,
+      status: override?.status ?? alert.status,
+      source: alert.source,
+      timestamp: alert.timestamp,
+      description: alert.description,
+      assignee: normalizeAssignee(override?.assignee) ?? normalizeAssignee(alert.assignee),
+      tactics: alert.tactics,
+      affectedEntities: alert.affected_entities,
+      recommendedActions: alert.recommended_actions,
+    }
+  })
 
   return NextResponse.json({
     threatMetrics,
