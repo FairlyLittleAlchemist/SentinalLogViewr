@@ -3,17 +3,18 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { parse } = require("csv-parse");
 const { createClient } = require("@supabase/supabase-js");
+const { Client: PgClient } = require("pg");
 const { XMLParser } = require("fast-xml-parser");
 const JSON5 = require("json5");
 const logfmt = require("logfmt");
-const { flatten } = require("flat");
+// Avoid deep flattening during ingest; heavy operations removed for speed.
 
 const CSV_FILES = [
-  { name: "Alert.csv", kind: "security_event" },
-  { name: "Sec Event.csv", kind: "security_event" },
-  { name: "AzurActivity.csv", kind: "activity" },
-  { name: "FierWall.csv", kind: "firewall" },
-  { name: "Incedent.csv", kind: "incident" },
+  { name: "Alert.csv", kind: "security_event", type: "security_event" },
+  { name: "Sec Event.csv", kind: "security_event", type: "security_event" },
+  { name: "AzurActivity.csv", kind: "activity", type: "activity" },
+  { name: "FierWall.csv", kind: "firewall", type: "firewall" },
+  { name: "Incedent.csv", kind: "incident", type: "incident" },
 ];
 
 const ALERT_STATUSES = new Set(["new", "in_progress", "resolved", "dismissed"]);
@@ -28,7 +29,11 @@ class EtlV2Ingestor {
     this.rowsRejected = 0;
     this.rejectionReasons = new Map();
     this.batch = [];
-    this.batchSize = 250;
+    this.batchSize = 1500;
+    this.maxConcurrentFlushes = 3;
+    this.activeFlushes = 0;
+    this.pendingFlushes = [];
+    this.pgClient = null;
     this.xmlParser = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: "@",
@@ -83,28 +88,34 @@ class EtlV2Ingestor {
     const payload = this.batch;
     this.batch = [];
 
-    let lastError = null;
-    for (let attempt = 1; attempt <= 4; attempt += 1) {
-      const { error } = await this.supabase
-        .from("stg_events")
-        .upsert(payload, {
+    const performInsert = async () => {
+      let lastError = null;
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        const { error } = await this.supabase.from("stg_events").upsert(payload, {
           onConflict: "ingest_run_id,event_uid",
           ignoreDuplicates: true,
         });
-
-      if (!error) {
-        lastError = null;
-        break;
+        if (!error) return;
+        lastError = error;
+        await new Promise((resolve) => setTimeout(resolve, attempt * 200));
       }
+      throw new Error(`Failed batch: ${lastError?.message || "unknown"}`);
+    };
 
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, attempt * 250));
-    }
+    const runWithGate = async () => {
+      while (this.activeFlushes >= this.maxConcurrentFlushes) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      this.activeFlushes += 1;
+      try {
+        await performInsert();
+      } finally {
+        this.activeFlushes -= 1;
+      }
+    };
 
-    if (lastError) {
-      throw new Error(`Failed to write staging batch: ${lastError.message}`);
-    }
-
+    const p = runWithGate();
+    this.pendingFlushes.push(p);
     this.rowsAccepted += payload.length;
   }
 
@@ -125,6 +136,22 @@ class EtlV2Ingestor {
       }
     }
     return "";
+  }
+
+  async getPgClient() {
+    if (this.pgClient) return this.pgClient;
+    const client = new PgClient({
+      host: process.env.PGHOST || "127.0.0.1",
+      port: Number(process.env.PGPORT || 54322),
+      user: process.env.PGUSER || "postgres",
+      password: process.env.PGPASSWORD || "postgres",
+      database: process.env.PGDATABASE || "postgres",
+      statement_timeout: 0,
+      connectionTimeoutMillis: 5000,
+    });
+    await client.connect();
+    this.pgClient = client;
+    return client;
   }
 
   parseDate(value) {
@@ -312,56 +339,16 @@ class EtlV2Ingestor {
   }
 
   normalizePayloadObject(payload) {
-    if (!payload || typeof payload !== "object") return payload;
-    if (Array.isArray(payload)) {
-      return payload.map((item) => this.normalizePayloadObject(item));
-    }
-
-    const normalized = {};
-    for (const [key, value] of Object.entries(payload)) {
-      const cleanKey = String(key || "").trim();
-      if (!cleanKey) continue;
-
-      if (typeof value === "string") {
-        const trimmed = value.trim();
-        const nestedJson = this.safeJsonParse(trimmed);
-        if (nestedJson && typeof nestedJson === "object") {
-          normalized[cleanKey] = this.normalizePayloadObject(nestedJson);
-          continue;
-        }
-
-        const delimited = this.parseDelimitedKeyValues(trimmed);
-        if (delimited) {
-          normalized[cleanKey] = this.normalizePayloadObject(delimited);
-          continue;
-        }
-      }
-
-      if (value && typeof value === "object") {
-        normalized[cleanKey] = this.normalizePayloadObject(value);
-      } else {
-        normalized[cleanKey] = value;
-      }
-    }
-
-    return normalized;
+    // Keep payload as-is to avoid costly deep cloning/parsing; raw JSON is still stored.
+    return payload;
   }
 
-  flattenPayload(payload) {
-    if (!payload || typeof payload !== "object") return {};
-    return flatten(payload, { safe: true, delimiter: "." });
-  }
-
-  extractFromPayload(payload, keys) {
+  quickExtract(payload, keys) {
     if (!payload || typeof payload !== "object") return "";
-    const flat = this.flattenPayload(payload);
     for (const key of keys) {
-      const lower = String(key).toLowerCase();
-      for (const [entryKey, entryValue] of Object.entries(flat)) {
-        if (String(entryKey).toLowerCase().endsWith(lower) && entryValue !== null && entryValue !== undefined) {
-          const text = String(entryValue).trim();
-          if (text) return text;
-        }
+      if (payload[key] !== undefined && payload[key] !== null) {
+        const text = String(payload[key]).trim();
+        if (text) return text;
       }
     }
     return "";
@@ -413,7 +400,9 @@ class EtlV2Ingestor {
     ]);
 
     const payloadJson = this.normalizePayloadObject(
-      this.safeJsonParse(payloadRaw) || this.parseXmlPayload(payloadRaw) || this.parseDelimitedKeyValues(payloadRaw)
+      this.safeJsonParse(payloadRaw)
+      || (payloadRaw && String(payloadRaw).trim().startsWith("<") ? this.parseXmlPayload(payloadRaw) : null)
+      || this.parseDelimitedKeyValues(payloadRaw)
     );
 
     return { payloadRaw, payloadJson };
@@ -421,15 +410,13 @@ class EtlV2Ingestor {
 
   summaryFromPayload(payloadRaw, payloadJson, fallback = "") {
     if (payloadJson && typeof payloadJson === "object") {
-      const directMessage = this.extractFromPayload(payloadJson, [
+      const directMessage = this.quickExtract(payloadJson, [
         "message",
-        "Activity",
+        "description",
+        "activity",
         "DeviceAction",
-        "FTNTFGTaction",
         "RequestURL",
         "Reason",
-        "description",
-        "eventCategory",
         "statusCode",
       ]);
 
@@ -559,7 +546,7 @@ class EtlV2Ingestor {
     return set.size ? Array.from(set).slice(0, 6) : ["Unknown"];
   }
 
-  buildStagingRecord(row, kind, fileName, rowNumber) {
+  buildStagingRecord(row, kind, type, fileName, rowNumber) {
     const occurredAt = this.parseDateFromRow(row, kind);
     if (!occurredAt) {
       this.addReject("missing_timestamp");
@@ -586,16 +573,16 @@ class EtlV2Ingestor {
 
     const actor = this.getField(row, ["caller", "account", "accountname", "subjectusername", "sourceusername", "destinationusername"])
       || incidentOwner.actor
-      || this.extractFromPayload(payloadJson, ["caller", "account", "targetUser", "subjectUserName", "SourceUserName", "DestinationUserName"]);
+      || this.quickExtract(payloadJson, ["caller", "account", "targetUser", "subjectUserName", "SourceUserName", "DestinationUserName"]);
 
     const resource = this.getField(row, ["resource", "resourceid", "entity", "computer", "workstation", "destinationhostname", "devicename"])
-      || this.extractFromPayload(payloadJson, ["resource", "entity", "resourceId", "fullFilePath", "filePath", "DestinationHostName", "SourceHostName"]);
+      || this.quickExtract(payloadJson, ["resource", "entity", "resourceId", "fullFilePath", "filePath", "DestinationHostName", "SourceHostName"]);
 
     const ipAddress = this.getField(row, ["calleripaddress", "ipaddress", "remoteipaddress", "clientipaddress", "clientaddress", "sourceip", "destinationip", "remoteip", "maliciousip"])
-      || this.extractFromPayload(payloadJson, ["callerIpAddress", "ipAddress", "remoteIpAddress", "SourceIP", "DestinationIP", "clientIpAddress"]);
+      || this.quickExtract(payloadJson, ["callerIpAddress", "ipAddress", "remoteIpAddress", "SourceIP", "DestinationIP", "clientIpAddress"]);
 
     const title = this.formatOperationTitle(
-      this.extractFromPayload(payloadJson, ["message", "action", "operationNameValue"]) ||
+      this.quickExtract(payloadJson, ["message", "action", "operationNameValue"]) ||
       eventName ||
       this.getField(row, ["title", "activity", "operationnamevalue"]) ||
       "Event"
@@ -604,7 +591,12 @@ class EtlV2Ingestor {
     const description = this.summaryFromPayload(payloadRaw, payloadJson, this.getField(row, ["description", "activity", "title", "message"]));
 
     const eventUid = this.buildEventUid(row, fileName, kind, occurredAt, eventName, resource, actor, description);
-    const rowHash = this.stableHash([JSON.stringify(row)]);
+    const rowHash = this.stableHash([
+      occurredAt.toISOString(),
+      eventCode || "",
+      actor || "",
+      resource || "",
+    ]);
 
     const normalizedStatus = ALERT_STATUSES.has(status)
       ? status
@@ -638,6 +630,7 @@ class EtlV2Ingestor {
       event_uid: eventUid,
       source_file: fileName,
       source_kind: kind,
+      type,
       source_row_number: rowNumber,
       occurred_at: occurredAt.toISOString(),
       severity,
@@ -667,6 +660,7 @@ class EtlV2Ingestor {
   }
 
   async ingestFile(filePath, kind, fileName) {
+    const type = CSV_FILES.find((c) => c.name === path.basename(filePath))?.type || kind;
     const parser = fs.createReadStream(filePath).pipe(
       parse({
         columns: true,
@@ -680,7 +674,7 @@ class EtlV2Ingestor {
     for await (const rawRow of parser) {
       this.rowsSeen += 1;
       const row = this.normalizeRow(rawRow);
-      const record = this.buildStagingRecord(row, kind, fileName, rowNumber);
+      const record = this.buildStagingRecord(row, kind, type, fileName, rowNumber);
       rowNumber += 1;
 
       if (!record) {
@@ -726,33 +720,38 @@ class EtlV2Ingestor {
     throw new Error(`${fn} RPC failed: ${lastError?.message || "unknown error"}`);
   }
 
+  async drainFlushes() {
+    const pending = this.pendingFlushes.splice(0, this.pendingFlushes.length);
+    if (pending.length) {
+      await Promise.allSettled(pending);
+    }
+    while (this.activeFlushes > 0) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   isMissingFunctionError(error) {
     const text = String(error?.message || "").toLowerCase();
     return text.includes("could not find the function") || text.includes("no function matches");
   }
 
   async finalizeChunked() {
-    const params = { p_run_id: this.runId };
+    const pg = await this.getPgClient();
+    await pg.query("set statement_timeout = 0;");
     const steps = [
-      "ingest_start_publish",
-      "ingest_publish_logs",
-      "ingest_publish_alerts",
-      "ingest_publish_rollups",
-      "ingest_finish_publish",
+      ["ingest_start_publish", [this.runId]],
+      ["ingest_publish_alerts_type", [this.runId, "incident"]],
+      ["ingest_publish_alerts_type", [this.runId, "security_event"]],
+      ["ingest_publish_alerts_type", [this.runId, "activity"]],
+      ["ingest_publish_alerts_type", [this.runId, "firewall"]],
+      ["ingest_publish_rollups", [this.runId]],
+      ["ingest_finish_publish", [this.runId]],
     ];
 
-    for (const step of steps) {
-      const { error } = await this.supabase.rpc(step, params);
-      if (!error) {
-        continue;
-      }
-
-      if (this.isMissingFunctionError(error)) {
-        throw error;
-      }
-
-      // Retry transient failures (timeouts/network) once per step using shared helper.
-      await this.rpcWithRetry(step, params, 2);
+    for (const [fn, args] of steps) {
+      const placeholders = args.map((_, idx) => `$${idx + 1}`).join(",");
+      const sql = `select public.${fn}(${placeholders});`;
+      await pg.query(sql, args);
     }
   }
 
@@ -784,7 +783,12 @@ class EtlV2Ingestor {
     await this.startRun();
     await this.ingestFiles();
     await this.flushBatch();
+    await this.drainFlushes();
     await this.finalize();
+    if (this.pgClient) {
+      await this.pgClient.end().catch(() => {});
+      this.pgClient = null;
+    }
   }
 }
 

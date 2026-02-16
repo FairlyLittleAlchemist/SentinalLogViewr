@@ -1,4 +1,7 @@
 import { XMLParser } from "fast-xml-parser"
+import JSON5 from "json5"
+import { parse as parseLogfmt } from "logfmt"
+import { flatten as flattenObjectLib } from "flat"
 
 export type PayloadKind = "json" | "xml" | "kv" | "text" | "empty"
 
@@ -19,6 +22,12 @@ export interface PayloadFacts {
   category: string
   action: string
   status: string
+  provider: string
+  incidentId: string
+  classification: string
+  owner: string
+  alertCount: string
+  ruleIds: string[]
 }
 
 export interface ParsedPayloadResult {
@@ -81,7 +90,11 @@ function parseJson(input: string) {
   try {
     return JSON.parse(trimmed)
   } catch {
-    return null
+    try {
+      return JSON5.parse(trimmed)
+    } catch {
+      return null
+    }
   }
 }
 
@@ -100,20 +113,15 @@ function parseXml(input: string) {
 }
 
 function parseKeyValue(input: string) {
-  const output: Record<string, unknown> = {}
-  const rows = input.split(/\r?\n|;/)
-  let matches = 0
-  for (const row of rows) {
-    const match = row.match(/^\s*([^=]+?)\s*=\s*(.+)\s*$/)
-    if (!match) continue
-    matches += 1
-    const key = match[1].trim()
-    const value = match[2].trim()
-    if (!key || !value) continue
-    output[key] = value
+  if (!input.includes("=")) return null
+  try {
+    const parsed = parseLogfmt(input.replace(/;/g, "\n"))
+    const entries = Object.entries(parsed ?? {}).filter(([, value]) => String(value ?? "").trim() !== "")
+    if (entries.length < 2) return null
+    return Object.fromEntries(entries)
+  } catch {
+    return null
   }
-  if (matches < 2) return null
-  return output
 }
 
 export function normalizePayload(input: unknown): NormalizedPayload | null {
@@ -176,35 +184,19 @@ export function normalizePayload(input: unknown): NormalizedPayload | null {
 
 function flattenObject(
   value: unknown,
-  prefix = "",
+  _prefix = "",
   output: Record<string, string> = {},
-  depth = 0
+  _depth = 0
 ) {
-  if (value === null || value === undefined) return output
-
-  if (depth > 8) {
-    if (prefix) output[prefix] = shortValue(String(value), 120)
-    return output
+  if (value === null || value === undefined || (!isRecord(value) && !Array.isArray(value))) return output
+  const flattened = flattenObjectLib(value as Record<string, unknown>, {
+    delimiter: ".",
+    safe: true,
+  }) as Record<string, unknown>
+  for (const [key, raw] of Object.entries(flattened)) {
+    if (raw === null || raw === undefined) continue
+    output[key] = compactWhitespace(String(raw))
   }
-
-  if (!isRecord(value) && !Array.isArray(value)) {
-    if (prefix) output[prefix] = compactWhitespace(String(value))
-    return output
-  }
-
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => {
-      const key = prefix ? `${prefix}[${index + 1}]` : `[${index + 1}]`
-      flattenObject(item, key, output, depth + 1)
-    })
-    return output
-  }
-
-  for (const [key, child] of Object.entries(value)) {
-    const next = prefix ? `${prefix}.${key}` : key
-    flattenObject(child, next, output, depth + 1)
-  }
-
   return output
 }
 
@@ -255,9 +247,12 @@ function prettyMessage(value: string) {
 
 export function extractFacts(normalized: NormalizedPayload | null): PayloadFacts {
   const flattened = normalized ? flattenObject(normalized) : {}
+  const entries = Object.entries(flattened)
 
   const action = findValue(flattened, [
     "operationnamevalue",
+    "title",
+    "incidentname",
     "activity",
     "action",
     "event.action",
@@ -276,6 +271,34 @@ export function extractFacts(normalized: NormalizedPayload | null): PayloadFacts
     "statuscode",
     "eventoutcome",
   ])
+  const provider = findValue(flattened, [
+    "providername",
+    "resourceprovidervalue",
+    "alertproductnames[1]",
+    "source",
+  ])
+  const incidentId = findValue(flattened, [
+    "incidentnumber",
+    "providerincidentid",
+    "incidentid",
+    "correlationid",
+  ])
+  const classification = findValue(flattened, [
+    "classification",
+    "classificationreason",
+  ])
+  const owner = findValue(flattened, [
+    "owner.userprincipalname",
+    "owner.email",
+    "owner.assignedto",
+    "owner.objectid",
+    "assignedto",
+  ])
+  const alertCount = findValue(flattened, ["alertscount"])
+  const ruleIds = entries
+    .filter(([key, value]) => key.toLowerCase().includes("relatedanalyticruleids[") && value)
+    .map(([, value]) => value)
+    .slice(0, 6)
   const actor = findValue(flattened, [
     "caller",
     "account",
@@ -304,14 +327,24 @@ export function extractFacts(normalized: NormalizedPayload | null): PayloadFacts
 
   const summaryParts = [
     prettyMessage(findValue(flattened, ["message", "description"])),
+    findValue(flattened, ["title", "incidentname"]) ? `Alert: ${findValue(flattened, ["title", "incidentname"])}` : "",
+    findValue(flattened, ["providername", "alertproductnames[1]"]) ? `Provider: ${findValue(flattened, ["providername", "alertproductnames[1]"])}` : "",
+    findValue(flattened, ["alertscount"]) ? `Alerts: ${findValue(flattened, ["alertscount"])}` : "",
     category ? `Category: ${category}` : "",
     status ? `Status: ${status}` : "",
     resource ? `Resource: ${resource}` : "",
   ].filter(Boolean)
 
+  const fallbackPairs = Object.entries(flattened)
+    .filter(([, value]) => !!value)
+    .slice(0, 3)
+    .map(([key, value]) => `${labelFromPath(key)}: ${shortValue(value, 64)}`)
+
   const summary = summaryParts.length
     ? shortValue(summaryParts.join(" | "), 220)
-    : "Event payload attached. Open details to inspect."
+    : fallbackPairs.length
+      ? shortValue(fallbackPairs.join(" | "), 220)
+      : "Event payload attached. Open details to inspect."
 
   return {
     title: formatOperationTitle(action || category || "Event"),
@@ -322,6 +355,12 @@ export function extractFacts(normalized: NormalizedPayload | null): PayloadFacts
     category: category || "Unknown",
     action: action || "Unknown",
     status: status || "Unknown",
+    provider: provider || "Unknown",
+    incidentId: incidentId || "",
+    classification: classification || "",
+    owner: owner || "",
+    alertCount: alertCount || "",
+    ruleIds,
   }
 }
 
@@ -387,6 +426,12 @@ export function parsePayload(rawInput: string): ParsedPayloadResult {
       category: "Unknown",
       action: "Unknown",
       status: "Unknown",
+      provider: "Unknown",
+      incidentId: "",
+      classification: "",
+      owner: "",
+      alertCount: "",
+      ruleIds: [],
     },
   }
 }

@@ -17,11 +17,25 @@ export default function UpdatePasswordPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const formatAuthException = (exception: unknown) => {
+    const message = exception instanceof Error ? exception.message : String(exception)
+    const lower = message.toLowerCase()
+    if (lower.includes("failed to fetch") || lower.includes("fetch")) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      return `Network/auth request failed. Check that Supabase is reachable and NEXT_PUBLIC_SUPABASE_URL is correct.${url ? ` (${url})` : ""}`
+    }
+    return message || "Unknown authentication error."
+  }
+
   useEffect(() => {
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (!data.session) {
-        setMessage("Use the password recovery link from your email to continue.")
+      try {
+        const { data } = await supabase.auth.getSession()
+        if (!data.session) {
+          setMessage("Use the password recovery link from your email to continue.")
+        }
+      } catch (exception) {
+        setError(formatAuthException(exception))
       }
     }
 
@@ -44,16 +58,20 @@ export default function UpdatePasswordPage() {
     }
 
     setLoading(true)
-    const { error: updateError } = await supabase.auth.updateUser({ password })
-    setLoading(false)
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ password })
+      if (updateError) {
+        setError(updateError.message)
+        return
+      }
 
-    if (updateError) {
-      setError(updateError.message)
-      return
+      setMessage("Password updated. Redirecting to dashboard...")
+      setTimeout(() => router.push("/"), 1500)
+    } catch (exception) {
+      setError(formatAuthException(exception))
+    } finally {
+      setLoading(false)
     }
-
-    setMessage("Password updated. Redirecting to dashboard...")
-    setTimeout(() => router.push("/"), 1500)
   }
 
   return (

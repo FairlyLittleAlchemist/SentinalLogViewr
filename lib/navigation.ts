@@ -5,6 +5,8 @@ import {
   ScrollText,
   ShieldAlert,
   Bot,
+  Briefcase,
+  Network,
   Users,
 } from "lucide-react"
 import type { Role } from "@/lib/auth/roles"
@@ -42,6 +44,18 @@ export const navItems: NavItem[] = [
     href: "/recommendations",
     icon: ShieldAlert,
     badge: 5,
+    roles: ["admin", "analyst", "viewer"],
+  },
+  {
+    label: "Cases",
+    href: "/cases",
+    icon: Briefcase,
+    roles: ["admin", "analyst", "viewer"],
+  },
+  {
+    label: "Board",
+    href: "/board",
+    icon: Network,
     roles: ["admin", "analyst", "viewer"],
   },
   {

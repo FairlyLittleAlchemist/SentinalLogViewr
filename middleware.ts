@@ -3,6 +3,9 @@ import { createServerClient } from "@supabase/ssr"
 import { defaultRole, type Role } from "@/lib/auth/roles"
 
 const publicPaths = ["/auth", "/unauthorized"]
+const SUPABASE_HEALTH_TTL_MS = 5_000
+let lastSupabaseHealthCheckAt = 0
+let lastSupabaseHealth = true
 
 const roleRoutes: Array<{ prefix: string; roles: Role[] }> = [
   { prefix: "/admin", roles: ["admin"] },
@@ -27,6 +30,31 @@ function getRequiredRoles(pathname: string) {
   return matched?.roles ?? null
 }
 
+async function isSupabaseReachable(supabaseUrl: string) {
+  const now = Date.now()
+  if (now - lastSupabaseHealthCheckAt < SUPABASE_HEALTH_TTL_MS) {
+    return lastSupabaseHealth
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 1200)
+  try {
+    const response = await fetch(`${supabaseUrl}/auth/v1/health`, {
+      method: "GET",
+      cache: "no-store",
+      signal: controller.signal,
+    })
+    lastSupabaseHealth = response.ok
+  } catch {
+    lastSupabaseHealth = false
+  } finally {
+    clearTimeout(timeout)
+    lastSupabaseHealthCheckAt = now
+  }
+
+  return lastSupabaseHealth
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
 
@@ -48,6 +76,18 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
+  const isReachable = await isSupabaseReachable(supabaseUrl)
+  if (!isReachable) {
+    if (pathname.startsWith("/auth")) {
+      return response
+    }
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = "/auth"
+    redirectUrl.searchParams.set("next", pathname)
+    redirectUrl.searchParams.set("error", "auth_service_unavailable")
+    return NextResponse.redirect(redirectUrl)
+  }
+
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
     cookies: {
       getAll() {
@@ -61,9 +101,18 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  let user = null
+  try {
+    const result = await supabase.auth.getUser()
+    user = result.data.user
+  } catch (error) {
+    // If Supabase is unreachable (e.g., local stack down), let the page load and show the auth form.
+    const redirectUrl = request.nextUrl.clone()
+    redirectUrl.pathname = "/auth"
+    redirectUrl.searchParams.set("next", pathname)
+    redirectUrl.searchParams.set("error", "auth_service_unavailable")
+    return NextResponse.redirect(redirectUrl)
+  }
 
   if (!user) {
     const redirectUrl = request.nextUrl.clone()
@@ -77,11 +126,18 @@ export async function middleware(request: NextRequest) {
     return response
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle()
+  let profile = null
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle()
+    profile = data
+  } catch {
+    // If profile lookup fails, allow navigation but without escalation.
+    return response
+  }
 
   const role = (profile?.role as Role | undefined) ?? defaultRole
   if (!requiredRoles.includes(role)) {

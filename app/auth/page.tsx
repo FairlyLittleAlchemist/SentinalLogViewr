@@ -22,18 +22,36 @@ export default function AuthPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const formatAuthException = (exception: unknown) => {
+    const message = exception instanceof Error ? exception.message : String(exception)
+    const lower = message.toLowerCase()
+    if (lower.includes("failed to fetch") || lower.includes("fetch")) {
+      const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      return `Network/auth request failed. Check that Supabase is reachable and NEXT_PUBLIC_SUPABASE_URL is correct.${url ? ` (${url})` : ""}`
+    }
+    return message || "Unknown authentication error."
+  }
+
   useEffect(() => {
     const next = searchParams.get("next")
+    const errorParam = searchParams.get("error")
     if (next) {
       setMessage("Please sign in to continue.")
+    }
+    if (errorParam === "auth_service_unavailable") {
+      setError("Auth service is not reachable. Ensure Supabase local stack is running on http://127.0.0.1:54321.")
     }
   }, [searchParams])
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data } = await supabase.auth.getSession()
-      if (data.session) {
-        router.push(searchParams.get("next") || "/")
+      try {
+        const { data } = await supabase.auth.getSession()
+        if (data.session) {
+          router.push(searchParams.get("next") || "/")
+        }
+      } catch (exception) {
+        setError(formatAuthException(exception))
       }
     }
 
@@ -46,18 +64,22 @@ export default function AuthPage() {
     setError(null)
     setMessage(null)
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
 
-    if (signInError) {
-      setError(signInError.message)
-    } else {
-      router.push(searchParams.get("next") || "/")
+      if (signInError) {
+        setError(signInError.message)
+      } else {
+        router.push(searchParams.get("next") || "/")
+      }
+    } catch (exception) {
+      setError(formatAuthException(exception))
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   const handleSignUp = async (event: React.FormEvent) => {
@@ -66,27 +88,31 @@ export default function AuthPage() {
     setError(null)
     setMessage(null)
 
-    const { data, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          },
         },
-      },
-    })
+      })
 
-    if (signUpError) {
-      setError(signUpError.message)
-    } else {
-      if (data.session) {
-        router.push("/")
+      if (signUpError) {
+        setError(signUpError.message)
       } else {
-        setMessage("Check your email to confirm your account before signing in.")
+        if (data.session) {
+          router.push("/")
+        } else {
+          setMessage("Check your email to confirm your account before signing in.")
+        }
       }
+    } catch (exception) {
+      setError(formatAuthException(exception))
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   const handleReset = async (event: React.FormEvent) => {
@@ -95,18 +121,22 @@ export default function AuthPage() {
     setError(null)
     setMessage(null)
 
-    const redirectTo = `${window.location.origin}/auth/callback?next=/auth/update-password&type=recovery`
-    const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo,
-    })
+    try {
+      const redirectTo = `${window.location.origin}/auth/callback?next=/auth/update-password&type=recovery`
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      })
 
-    if (resetError) {
-      setError(resetError.message)
-    } else {
-      setMessage("Password reset email sent. Check your inbox.")
+      if (resetError) {
+        setError(resetError.message)
+      } else {
+        setMessage("Password reset email sent. Check your inbox.")
+      }
+    } catch (exception) {
+      setError(formatAuthException(exception))
+    } finally {
+      setLoading(false)
     }
-
-    setLoading(false)
   }
 
   return (

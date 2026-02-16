@@ -1,6 +1,6 @@
 "use client"
 
-import { Check, Moon, Palette, Trees, Waves } from "lucide-react"
+import { Check, Droplets, Moon, Palette, Sun, Trees, Waves } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
 import {
@@ -15,6 +15,8 @@ const themeOptions = [
   { value: "theme-emerald", label: "Emerald", icon: Palette },
   { value: "theme-forest", label: "Forest", icon: Trees },
   { value: "theme-sand", label: "Sand", icon: Waves },
+  { value: "theme-ocean", label: "Ocean", icon: Droplets },
+  { value: "theme-amber", label: "Amber", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
 ] as const
 

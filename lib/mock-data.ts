@@ -18,8 +18,28 @@ export interface LogEntry {
   actor?: string | null
   resource?: string | null
   sourceFile?: string | null
+  rawPayloadFull?: string | null
+  rawRow?: Record<string, unknown> | null
   payloadKind?: "json" | "xml" | "kv" | "text" | "empty"
   summary?: string
+  parsedFacts?: {
+    kind?: string
+    title: string
+    summary: string
+    actor: string
+    ip: string
+    resource: string
+    category: string
+    action: string
+    status: string
+    provider: string
+    incidentId: string
+    classification: string
+    owner: string
+    alertCount: string
+    ruleIds: string[]
+    [key: string]: unknown
+  }
   parsedFieldsPreview?: Array<{ key: string; label: string; value: string }>
 }
 
@@ -28,6 +48,7 @@ export interface Alert {
   title: string
   severity: "critical" | "high" | "medium" | "low"
   status: "new" | "in_progress" | "resolved" | "dismissed"
+  type?: "incident" | "security_event" | "activity" | "firewall" | string | null
   source: string
   timestamp: string
   description: string
@@ -45,8 +66,29 @@ export interface Alert {
   resource?: string | null
   ipAddress?: string | null
   sourceFile?: string | null
+  statusSource?: "detected" | "analyst"
+  rawPayloadFull?: string | null
+  rawRow?: Record<string, unknown> | null
   payloadKind?: "json" | "xml" | "kv" | "text" | "empty"
   summary?: string
+  parsedFacts?: {
+    kind?: string
+    title: string
+    summary: string
+    actor: string
+    ip: string
+    resource: string
+    category: string
+    action: string
+    status: string
+    provider: string
+    incidentId: string
+    classification: string
+    owner: string
+    alertCount: string
+    ruleIds: string[]
+    [key: string]: unknown
+  }
   parsedFieldsPreview?: Array<{ key: string; label: string; value: string }>
 }
 

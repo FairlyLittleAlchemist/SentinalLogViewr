@@ -4,11 +4,14 @@ import { flattenForDisplay, parsePayload } from "@/lib/parsing/event-payload"
 
 export const dynamic = "force-dynamic"
 
+const GENERIC_SUMMARY = "Event payload attached. Open details to inspect."
+
 export async function GET(request: Request) {
   const supabase = await createClient()
   const { searchParams } = new URL(request.url)
   const page = Math.max(Number(searchParams.get("page") ?? 1), 1)
   const pageSize = Math.min(Math.max(Number(searchParams.get("pageSize") ?? 50), 1), 200)
+  const search = (searchParams.get("search") ?? "").trim()
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
   const {
@@ -19,21 +22,37 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("logs")
     .select("*", { count: "exact" })
     .order("timestamp", { ascending: false })
-    .range(from, to)
+
+  if (search) {
+    const escaped = search.replace(/[%_]/g, "")
+    query = query.or(`id.ilike.%${escaped}%,message.ilike.%${escaped}%,source.ilike.%${escaped}%,actor.ilike.%${escaped}%,resource.ilike.%${escaped}%,ip_address.ilike.%${escaped}%`)
+  }
+
+  const { data, error, count } = await query.range(from, to)
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
   const logs = (data ?? []).map((log) => {
-    const payloadInput = (log.payload_raw ?? log.message ?? "").trim()
+    const payloadInput = (
+      (log.payload_raw ?? "").trim() ||
+      (log.payload_json ? JSON.stringify(log.payload_json) : "") ||
+      (log.message ?? "").trim()
+    )
     const parsed = parsePayload(payloadInput)
     const preview = flattenForDisplay(parsed.normalized, { maxItems: 10, maxValueLength: 120 })
-    const summary = parsed.facts.summary || log.message
+    const parsedFacts = {
+      ...parsed.facts,
+      ...(log.parsed_facts ?? {}),
+    }
+    const summary = parsedFacts.summary && parsedFacts.summary !== GENERIC_SUMMARY
+      ? String(parsedFacts.summary)
+      : log.message
 
     return {
       id: log.id,
@@ -55,6 +74,7 @@ export async function GET(request: Request) {
       sourceFile: log.source_file,
       payloadKind: parsed.kind,
       summary,
+      parsedFacts,
       parsedFieldsPreview: preview,
     }
   })

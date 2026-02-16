@@ -137,7 +137,7 @@ export function AppHeader({ title }: { title: string }) {
             )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={(event) => {
+              onClick={(event) => {
                 event.preventDefault()
                 void signOut()
               }}

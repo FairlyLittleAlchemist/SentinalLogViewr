@@ -69,6 +69,37 @@
   .interactive-surface:hover::before {
     opacity: 1;
   }
+
+  .code-surface {
+    font-family: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+
+  .code-key {
+    color: hsl(var(--primary));
+    font-weight: 600;
+  }
+
+  .code-string {
+    color: hsl(199 89% 48%);
+  }
+
+  .code-number {
+    color: hsl(38 92% 50%);
+  }
+
+  .code-boolean {
+    color: hsl(142 71% 45%);
+    font-weight: 600;
+  }
+
+  .code-null {
+    color: hsl(var(--muted-foreground));
+    font-style: italic;
+  }
+
+  .code-muted {
+    color: hsl(var(--muted-foreground));
+  }
 }
 
 @layer base {
@@ -180,6 +211,74 @@
     --success: 150 36% 34%;
   }
 
+  .theme-ocean {
+    --background: 200 44% 95%;
+    --foreground: 208 38% 16%;
+    --card: 198 40% 98%;
+    --card-foreground: 208 38% 16%;
+    --popover: 198 40% 98%;
+    --popover-foreground: 208 38% 16%;
+    --primary: 198 72% 42%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 200 32% 90%;
+    --secondary-foreground: 210 26% 21%;
+    --muted: 200 30% 92%;
+    --muted-foreground: 208 14% 42%;
+    --accent: 185 54% 42%;
+    --accent-foreground: 0 0% 100%;
+    --border: 202 24% 82%;
+    --input: 202 24% 82%;
+    --ring: 198 72% 42%;
+    --chart-1: 198 72% 42%;
+    --chart-2: 186 58% 44%;
+    --chart-3: 32 84% 56%;
+    --chart-4: 0 70% 52%;
+    --chart-5: 222 40% 49%;
+    --sidebar-background: 200 34% 92%;
+    --sidebar-foreground: 208 32% 18%;
+    --sidebar-primary: 198 72% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 198 24% 88%;
+    --sidebar-accent-foreground: 208 32% 18%;
+    --sidebar-border: 202 24% 82%;
+    --sidebar-ring: 198 72% 42%;
+    --success: 164 48% 36%;
+  }
+
+  .theme-amber {
+    --background: 39 46% 95%;
+    --foreground: 24 30% 18%;
+    --card: 36 45% 98%;
+    --card-foreground: 24 30% 18%;
+    --popover: 36 45% 98%;
+    --popover-foreground: 24 30% 18%;
+    --primary: 24 72% 45%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 41 30% 89%;
+    --secondary-foreground: 25 28% 22%;
+    --muted: 41 28% 91%;
+    --muted-foreground: 25 14% 40%;
+    --accent: 12 64% 49%;
+    --accent-foreground: 0 0% 100%;
+    --border: 34 22% 80%;
+    --input: 34 22% 80%;
+    --ring: 24 72% 45%;
+    --chart-1: 24 72% 45%;
+    --chart-2: 10 70% 52%;
+    --chart-3: 200 44% 43%;
+    --chart-4: 0 70% 52%;
+    --chart-5: 152 36% 35%;
+    --sidebar-background: 39 34% 92%;
+    --sidebar-foreground: 25 28% 20%;
+    --sidebar-primary: 24 72% 45%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 38 26% 87%;
+    --sidebar-accent-foreground: 25 28% 20%;
+    --sidebar-border: 34 22% 80%;
+    --sidebar-ring: 24 72% 45%;
+    --success: 152 36% 35%;
+  }
+
   .dark {
     --background: 156 18% 10%;
     --foreground: 148 16% 92%;
@@ -226,11 +325,36 @@
     background-image:
       radial-gradient(circle at 20% -10%, hsl(var(--primary) / 0.15), transparent 35%),
       radial-gradient(circle at 90% 0%, hsl(var(--accent) / 0.1), transparent 30%);
+    background-size: 120% 120%, 120% 120%;
     background-attachment: fixed;
+    animation: background-drift 22s ease-in-out infinite alternate;
   }
 
   main {
     animation: fade-in 360ms ease-out both;
+  }
+
+  a,
+  button,
+  input,
+  textarea,
+  select {
+    transition:
+      color 220ms ease,
+      background-color 220ms ease,
+      border-color 220ms ease,
+      box-shadow 260ms ease,
+      transform 220ms ease;
+  }
+
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  select:focus-visible {
+    box-shadow:
+      0 0 0 2px hsl(var(--background)),
+      0 0 0 4px hsl(var(--primary) / 0.28);
   }
 
   ::-webkit-scrollbar {
@@ -290,5 +414,14 @@
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes background-drift {
+  0% {
+    background-position: 0% 0%, 100% 0%;
+  }
+  100% {
+    background-position: 6% 4%, 94% 6%;
   }
 }

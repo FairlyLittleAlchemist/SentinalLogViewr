@@ -1,79 +1,14 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { flattenForDisplay, parsePayload } from "@/lib/parsing/event-payload"
+import { normalizeAssignee, normalizeSummary } from "@/lib/alerts/normalization"
 
 export const dynamic = "force-dynamic"
 
-function safeParseJson(value: string) {
-  try {
-    return JSON.parse(value)
-  } catch {
-    return null
-  }
-}
-
-function pickFirstText(values: unknown[]) {
-  for (const value of values) {
-    const text = String(value ?? "").trim()
-    if (!text) continue
-    if (text.toLowerCase() === "null" || text.toLowerCase() === "undefined") continue
-    return text
-  }
-  return ""
-}
-
-function normalizeAssignee(value: unknown): string | null {
-  if (value === null || value === undefined) return null
-  const raw = String(value).trim()
-  if (!raw || raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") return null
-
-  const parsed = safeParseJson(raw)
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    const principal = pickFirstText([
-      (parsed as Record<string, unknown>).assignedTo,
-      (parsed as Record<string, unknown>).userPrincipalName,
-      (parsed as Record<string, unknown>).email,
-      (parsed as Record<string, unknown>).name,
-      (parsed as Record<string, unknown>).displayName,
-      (parsed as Record<string, unknown>).objectId,
-    ])
-    return principal || null
-  }
-
-  if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
-    return null
-  }
-
-  return raw
-}
-
-function normalizeSummary(summary: unknown): string | null {
-  const raw = String(summary ?? "").trim()
-  if (!raw) return null
-
-  const parsed = safeParseJson(raw)
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    const record = parsed as Record<string, unknown>
-    const msg = pickFirstText([record.message, record.description, record.title, record.incidentName, record.activity])
-    if (msg) return msg.slice(0, 220)
-
-    const product = Array.isArray(record.alertProductNames) ? String(record.alertProductNames[0] ?? "").trim() : ""
-    const count = String(record.alertsCount ?? "").trim()
-    if (product || count) {
-      return `${product || "Security incident"}${count ? ` (${count} alerts)` : ""}`.slice(0, 220)
-    }
-    return null
-  }
-
-  if ((raw.startsWith("{") && raw.endsWith("}")) || (raw.startsWith("[") && raw.endsWith("]"))) {
-    return null
-  }
-
-  if (raw.includes("=") && raw.includes(";") && raw.length > 180) {
-    return null
-  }
-
-  return raw.slice(0, 220)
+function withSearch<T extends { or: (filters: string) => T }>(query: T, search: string): T {
+  if (!search) return query
+  const escaped = search.replace(/[%_]/g, "")
+  return query.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%,id.ilike.%${escaped}%`)
 }
 
 export async function GET(request: Request) {
@@ -84,6 +19,8 @@ export async function GET(request: Request) {
   const search = (searchParams.get("search") ?? "").trim()
   const severityFilter = (searchParams.get("severity") ?? "all").trim().toLowerCase()
   const statusFilter = (searchParams.get("status") ?? "all").trim().toLowerCase()
+  const typeParam = searchParams.get("type") ?? searchParams.get("kind") ?? "all"
+  const typeFilter = typeParam.trim().toLowerCase()
   const from = (page - 1) * pageSize
   const to = from + pageSize - 1
   const {
@@ -104,10 +41,10 @@ export async function GET(request: Request) {
   if (statusFilter !== "all") {
     query = query.eq("status", statusFilter)
   }
-  if (search) {
-    const escaped = search.replace(/[%_]/g, "")
-    query = query.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%,id.ilike.%${escaped}%`)
+  if (typeFilter !== "all") {
+    query = query.eq("type", typeFilter)
   }
+  query = withSearch(query, search)
 
   const { data, error, count } = await query.range(from, to)
 
@@ -188,6 +125,12 @@ export async function GET(request: Request) {
       ?? "No description provided."
     const preview = flattenForDisplay(parsed.normalized, { maxItems: 12, maxValueLength: 120 })
 
+    const resolvedType =
+      (alert.type && String(alert.type)) ||
+      (typeof parsedFacts.kind === "string" ? parsedFacts.kind : "") ||
+      (typeFilter !== "all" ? typeFilter : null) ||
+      null
+
     return {
       id: alert.id,
       title: alert.title,
@@ -214,6 +157,7 @@ export async function GET(request: Request) {
       sourceFile: alert.source_file,
       payloadKind: parsed.kind,
       summary,
+      type: resolvedType,
       parsedFacts,
       parsedFieldsPreview: preview,
       statusSource: override?.status || override?.assignee ? "analyst" : "detected",
@@ -224,15 +168,53 @@ export async function GET(request: Request) {
   const severityTotals = { critical: 0, high: 0, medium: 0, low: 0 }
 
   for (const severity of severities) {
-    const { count: severityCount, error: severityError } = await supabase
+    let severityQuery = supabase
       .from("alerts")
       .select("id", { count: "exact", head: true })
       .eq("severity", severity)
 
+    if (statusFilter !== "all") {
+      severityQuery = severityQuery.eq("status", statusFilter)
+    }
+    if (typeFilter !== "all") {
+      severityQuery = severityQuery.eq("type", typeFilter)
+    }
+    severityQuery = withSearch(severityQuery, search)
+
+    const { count: severityCount, error: severityError } = await severityQuery
     if (severityError) {
       return NextResponse.json({ error: severityError.message }, { status: 500 })
     }
     severityTotals[severity] = severityCount ?? 0
+  }
+
+  const alertTypes = ["incident", "activity", "firewall", "security_event"] as const
+  const typeTotals: Record<(typeof alertTypes)[number], number> = {
+    incident: 0,
+    activity: 0,
+    firewall: 0,
+    security_event: 0,
+  }
+
+  for (const alertType of alertTypes) {
+    let kindQuery = supabase
+      .from("alerts")
+      .select("id", { count: "exact", head: true })
+      .eq("type", alertType)
+
+    if (severityFilter !== "all") {
+      kindQuery = kindQuery.eq("severity", severityFilter)
+    }
+    if (statusFilter !== "all") {
+      kindQuery = kindQuery.eq("status", statusFilter)
+    }
+    kindQuery = withSearch(kindQuery, search)
+
+    const { count: alertTypeCount, error: alertTypeError } = await kindQuery
+    if (alertTypeError) {
+      return NextResponse.json({ error: alertTypeError.message }, { status: 500 })
+    }
+    typeTotals[alertType] = alertTypeCount ?? 0
   }
 
   return NextResponse.json({
@@ -241,5 +223,6 @@ export async function GET(request: Request) {
     page,
     pageSize,
     severityTotals,
+    typeTotals,
   })
 }

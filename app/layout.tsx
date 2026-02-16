@@ -6,8 +6,8 @@ import './globals.css'
 import { AuthProvider } from '@/components/auth/auth-provider'
 import { ThemeProvider } from '@/components/theme-provider'
 
-const _dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
-const _dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight: ['400', '500'] })
+const dmSans = DM_Sans({ subsets: ['latin'], variable: '--font-dm-sans' })
+const dmMono = DM_Mono({ subsets: ['latin'], variable: '--font-dm-mono', weight: ['400', '500'] })
 
 export const metadata: Metadata = {
   title: 'Sentinel Command - Azure Sentinel Log Management',
@@ -25,12 +25,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${_dmSans.variable} ${_dmMono.variable} font-sans antialiased`}>
+      <body className={`${dmSans.variable} ${dmMono.variable} font-sans antialiased`}>
         <ThemeProvider
           attribute="class"
           defaultTheme="theme-emerald"
           enableSystem={false}
-          themes={["theme-emerald", "theme-forest", "theme-sand", "dark"]}
+          themes={["theme-emerald", "theme-forest", "theme-sand", "theme-ocean", "theme-amber", "dark"]}
         >
           <AuthProvider>{children}</AuthProvider>
         </ThemeProvider>
