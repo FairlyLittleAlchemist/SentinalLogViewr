@@ -92,6 +92,10 @@ type ArtifactNodeData = {
   severity?: string
   expanded?: boolean
   details?: Array<{ label: string; value: string }>
+  fileType?: string
+  fileName?: string
+  previewUrl?: string
+  previewKind?: "image" | "text" | "file"
 }
 
 type BoardContextMenuState =
@@ -119,6 +123,14 @@ function ArtifactNode({ data }: { data: ArtifactNodeData }) {
         <Badge variant="outline" className="text-[10px] capitalize">{data.nodeType}</Badge>
       </div>
       {data.subtitle ? <div className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">{data.subtitle}</div> : null}
+      {data.previewKind === "image" && data.previewUrl ? (
+        <img src={data.previewUrl} alt={data.fileName || data.label} className="mt-2 max-h-28 w-full rounded border border-border object-contain" />
+      ) : null}
+      {data.previewKind === "text" && data.previewUrl ? (
+        <div className="mt-2 max-h-24 overflow-auto rounded border border-border bg-secondary/30 p-2 text-[10px] text-muted-foreground">
+          {data.previewUrl}
+        </div>
+      ) : null}
       {data.expanded && details.length > 0 ? (
         <div className="mt-2 space-y-1 border-t border-border/70 pt-2">
           {details.map((item) => (
@@ -141,6 +153,13 @@ function createNodeId(prefix: string) {
   return `${prefix}-${crypto.randomUUID().slice(0, 8)}`
 }
 
+function fileSubtype(contentType: string) {
+  const normalized = contentType.toLowerCase()
+  if (normalized.startsWith("image/")) return "image"
+  if (normalized.startsWith("text/") || normalized.includes("json")) return "text"
+  return "file"
+}
+
 function buildDetailRows(entry: Record<string, unknown>) {
   const candidates: Array<[string, unknown]> = [
     ["ID", entry.refId],
@@ -155,6 +174,8 @@ function buildDetailRows(entry: Record<string, unknown>) {
     ["Actor", entry.actor],
     ["Resource", entry.resource],
     ["IP", entry.ipAddress],
+    ["Size (bytes)", entry.sizeBytes],
+    ["File Type", entry.contentType],
     ["Summary", entry.summary],
     ["Description", entry.description],
     ["Message", entry.message],
@@ -359,9 +380,61 @@ function BoardCanvasPageInner() {
     event.dataTransfer.effectAllowed = "copy"
   }, [canEditBoard])
 
-  const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+  const onDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     if (!canEditBoard || !reactFlowRef.current) return
+
+    const position = reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const files = Array.from(event.dataTransfer.files ?? [])
+
+    if (files.length > 0) {
+      const createdNodes = await Promise.all(files.slice(0, 4).map(async (file, index) => {
+        const type = fileSubtype(file.type || "")
+        let previewKind: ArtifactNodeData["previewKind"] = "file"
+        let previewUrl = ""
+
+        if (type === "image" && file.size <= 1_500_000) {
+          previewUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader()
+            reader.onload = () => resolve(String(reader.result ?? ""))
+            reader.onerror = () => resolve("")
+            reader.readAsDataURL(file)
+          })
+          previewKind = previewUrl ? "image" : "file"
+        } else if (type === "text" && file.size <= 200_000) {
+          const text = await file.text().catch(() => "")
+          previewUrl = text.slice(0, 1200)
+          previewKind = previewUrl ? "text" : "file"
+        }
+
+        const yOffset = index * 28
+        return {
+          id: createNodeId("file"),
+          type: "artifact",
+          position: { x: position.x + 20, y: position.y + yOffset },
+          data: {
+            label: file.name,
+            subtitle: file.type || "application/octet-stream",
+            nodeType: "evidence",
+            refId: "",
+            severity: "",
+            expanded: false,
+            fileName: file.name,
+            fileType: file.type || "application/octet-stream",
+            previewUrl,
+            previewKind,
+            details: buildDetailRows({
+              fileName: file.name,
+              contentType: file.type || "application/octet-stream",
+              sizeBytes: file.size,
+              source: "local drag-and-drop",
+            }),
+          } as ArtifactNodeData,
+        } as Node
+      }))
+      setNodes((current) => [...current, ...createdNodes])
+      return
+    }
 
     const raw = event.dataTransfer.getData("application/x-board-node")
     if (!raw) return
@@ -373,8 +446,6 @@ function BoardCanvasPageInner() {
       return
     }
     if (!payload) return
-
-    const position = reactFlowRef.current.screenToFlowPosition({ x: event.clientX, y: event.clientY })
 
     const nodeType = String(payload.nodeType ?? "entity") as ArtifactNodeData["nodeType"]
     const node: Node = {

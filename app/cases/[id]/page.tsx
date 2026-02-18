@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useLocale, useTranslations } from "next-intl"
 
 type CaseDetail = {
@@ -164,6 +165,7 @@ export default function CaseDetailPage() {
   const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookTemplateOption[]>([])
   const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>("")
   const [playbookState, setPlaybookState] = useState<PlaybookExecutionState | null>(null)
+  const [activeTab, setActiveTab] = useState<"workflow" | "intel" | "operations" | "response" | "activity">("workflow")
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -180,6 +182,8 @@ export default function CaseDetailPage() {
   const [newEvidenceUrl, setNewEvidenceUrl] = useState("")
   const [newEvidenceSha, setNewEvidenceSha] = useState("")
   const [newEvidenceDetails, setNewEvidenceDetails] = useState("")
+  const [newEvidenceFile, setNewEvidenceFile] = useState<File | null>(null)
+  const [uploadingEvidenceFile, setUploadingEvidenceFile] = useState(false)
   const [newHypothesis, setNewHypothesis] = useState("")
   const [newActionTarget, setNewActionTarget] = useState("")
   const [newActionType, setNewActionType] = useState<ResponseAction["actionType"]>("contain_host")
@@ -200,9 +204,17 @@ export default function CaseDetailPage() {
   const linkedLogIds = useMemo(() => new Set(linkedLogs.map((item) => item.logId)), [linkedLogs])
   const relationLabel = useCallback((value: "primary" | "related_to" | "same_actor" | "same_ip" | "same_resource") => tc(`relation.${value}`), [tc])
   const stageLabel = useCallback((value: "triage" | "investigation" | "containment" | "eradication_recovery" | "post_incident") => tc(`stage.${value}`), [tc])
+  const stepStatusTone = useCallback((status: "pending" | "in_progress" | "completed" | "skipped" | "blocked") => {
+    if (status === "completed") return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30"
+    if (status === "in_progress") return "bg-blue-500/10 text-blue-700 border-blue-500/30"
+    if (status === "blocked") return "bg-red-500/10 text-red-700 border-red-500/30"
+    if (status === "skipped") return "bg-amber-500/10 text-amber-700 border-amber-500/30"
+    return "bg-muted text-muted-foreground border-border"
+  }, [])
 
-  const loadCase = useCallback(async () => {
-    setLoading(true)
+  const loadCase = useCallback(async (options?: { silent?: boolean }) => {
+    const silent = options?.silent ?? false
+    if (!silent) setLoading(true)
     try {
       const [detailRes, alertsRes, logsRes, playbookRes, playbookListRes, flagsRes] = await Promise.all([
         fetch(`/api/cases/${caseId}`),
@@ -212,13 +224,17 @@ export default function CaseDetailPage() {
         fetch("/api/playbooks?isActive=true"),
         fetch("/api/feature-flags"),
       ])
-      if (!detailRes.ok || !alertsRes.ok || !logsRes.ok) {
-        throw new Error(tc("errors.loadWorkspace"))
+      if (!detailRes.ok) {
+        throw new Error(`${tc("errors.loadWorkspace")} (${detailRes.status})`)
       }
 
       const detail = await detailRes.json()
-      const alertsPayload = await alertsRes.json() as { alerts: LinkedAlert[] }
-      const logsPayload = await logsRes.json() as { logs: LinkedLog[] }
+      const alertsPayload = alertsRes.ok
+        ? await alertsRes.json() as { alerts: LinkedAlert[] }
+        : { alerts: [] as LinkedAlert[] }
+      const logsPayload = logsRes.ok
+        ? await logsRes.json() as { logs: LinkedLog[] }
+        : { logs: [] as LinkedLog[] }
       const playbookPayload = playbookRes.ok ? await playbookRes.json() as PlaybookExecutionState : null
       const playbookListPayload = playbookListRes.ok ? await playbookListRes.json() as { playbooks?: PlaybookTemplateOption[] } : null
       const flagsPayload = flagsRes.ok ? await flagsRes.json() as { flags?: Array<{ key: string; enabled: boolean }> } : null
@@ -242,9 +258,9 @@ export default function CaseDetailPage() {
       }))
       setAvailablePlaybooks(options)
       if (playbookPayload?.execution?.templateId) {
-        setSelectedPlaybookId(playbookPayload.execution.templateId)
-      } else if (options.length && !selectedPlaybookId) {
-        setSelectedPlaybookId(options[0].id)
+        setSelectedPlaybookId((current) => current || playbookPayload.execution!.templateId)
+      } else if (options.length) {
+        setSelectedPlaybookId((current) => current || options[0].id)
       }
       setPlaybooksEnabled(Boolean(flagsPayload?.flags?.some((flag) => flag.key === "experimental_playbooks" && flag.enabled)))
       setLinkedAlerts(alertsPayload.alerts ?? [])
@@ -263,9 +279,9 @@ export default function CaseDetailPage() {
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : tc("errors.loadCase"))
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
-  }, [caseId, selectedPlaybookId, tc])
+  }, [caseId, tc])
 
   useEffect(() => { void loadCase() }, [loadCase])
 
@@ -304,13 +320,39 @@ export default function CaseDetailPage() {
       setError(payload.error ?? tc("errors.updateCase"))
       return
     }
-    await loadCase()
+    await loadCase({ silent: true })
   }, [caseId, loadCase, tc])
 
   const postJson = useCallback(async (url: string, body: Record<string, unknown>) => {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-    if (res.ok) await loadCase()
+    if (res.ok) await loadCase({ silent: true })
   }, [loadCase])
+
+  const uploadEvidenceFile = useCallback(async () => {
+    if (!newEvidenceFile) return
+    const form = new FormData()
+    form.set("file", newEvidenceFile)
+    if (newEvidenceLabel.trim()) form.set("label", newEvidenceLabel.trim())
+    if (newEvidenceDetails.trim()) form.set("details", newEvidenceDetails.trim())
+
+    setUploadingEvidenceFile(true)
+    const res = await fetch(`/api/cases/${caseId}/evidence/upload`, {
+      method: "POST",
+      body: form,
+    })
+    const payload = await res.json().catch(() => ({})) as { error?: string }
+    setUploadingEvidenceFile(false)
+
+    if (!res.ok) {
+      setError(payload.error ?? "Failed to upload evidence file")
+      return
+    }
+
+    setNewEvidenceFile(null)
+    setNewEvidenceLabel("")
+    setNewEvidenceDetails("")
+    await loadCase({ silent: true })
+  }, [caseId, loadCase, newEvidenceDetails, newEvidenceFile, newEvidenceLabel])
 
   const bindPlaybook = useCallback(async () => {
     const payload: Record<string, unknown> = { action: "bind" }
@@ -322,9 +364,12 @@ export default function CaseDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
-    if (res.ok) {
-      await loadCase()
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { error?: string }
+      setError(data.error ?? "Failed to bind playbook")
+      return
     }
+    await loadCase({ silent: true })
   }, [caseId, loadCase, selectedPlaybookId])
 
   const reseedPlaybookTasks = useCallback(async () => {
@@ -334,7 +379,7 @@ export default function CaseDetailPage() {
       body: JSON.stringify({ action: "reseed" }),
     })
     if (res.ok) {
-      await loadCase()
+      await loadCase({ silent: true })
     }
   }, [caseId, loadCase])
 
@@ -344,9 +389,12 @@ export default function CaseDetailPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     })
-    if (res.ok) {
-      await loadCase()
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({})) as { error?: string }
+      setError(payload.error ?? "Failed to update playbook step")
+      return
     }
+    await loadCase({ silent: true })
   }, [caseId, loadCase])
 
   if (loading) return <DashboardLayout><AppHeader title={t("caseDetails")} /><div className="p-6 text-sm text-muted-foreground">{tc("loadingCase")}</div></DashboardLayout>
@@ -374,6 +422,16 @@ export default function CaseDetailPage() {
             </CardContent>
           </Card>
 
+          <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="w-full">
+            <TabsList className="h-auto w-full justify-start gap-1 overflow-x-auto rounded-lg border border-border bg-muted/40 p-1">
+              <TabsTrigger value="workflow" className="rounded-md px-3 text-xs font-medium">Workflow</TabsTrigger>
+              <TabsTrigger value="intel" className="rounded-md px-3 text-xs font-medium">Intel</TabsTrigger>
+              <TabsTrigger value="operations" className="rounded-md px-3 text-xs font-medium">Operations</TabsTrigger>
+              <TabsTrigger value="response" className="rounded-md px-3 text-xs font-medium">Response</TabsTrigger>
+              <TabsTrigger value="activity" className="rounded-md px-3 text-xs font-medium">Activity</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="workflow" className="mt-4 space-y-4">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm">{tc("workflow.title")}</CardTitle></CardHeader>
             <CardContent className="space-y-2 text-xs">
@@ -415,46 +473,56 @@ export default function CaseDetailPage() {
 
           {playbooksEnabled ? (
             <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">{tc("playbook.title")}</CardTitle></CardHeader>
-              <CardContent className="space-y-3 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">{tc("playbook.title")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4 text-sm">
+                <div className="flex flex-wrap items-end gap-2 rounded-md border border-border bg-muted/20 p-3">
                   <Select value={selectedPlaybookId} onValueChange={setSelectedPlaybookId}>
-                    <SelectTrigger className="h-8 w-64"><SelectValue placeholder={tc("playbook.selectTemplate")} /></SelectTrigger>
+                    <SelectTrigger className="h-9 w-full min-w-[260px] md:w-[320px]"><SelectValue placeholder={tc("playbook.selectTemplate")} /></SelectTrigger>
                     <SelectContent>
                       {availablePlaybooks.map((entry) => (
                         <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <Button size="sm" variant="outline" onClick={() => void bindPlaybook()}>{tc("playbook.bind")}</Button>
-                  <Button size="sm" variant="outline" onClick={() => void reseedPlaybookTasks()}>{tc("playbook.reseed")}</Button>
+                  <Button size="sm" className="h-9" onClick={() => void bindPlaybook()}>{tc("playbook.bind")}</Button>
+                  <Button size="sm" variant="outline" className="h-9" onClick={() => void reseedPlaybookTasks()}>{tc("playbook.reseed")}</Button>
                 </div>
 
                 {playbookState?.execution ? (
-                  <div className="space-y-2 rounded border border-border p-2">
+                  <div className="space-y-3 rounded-lg border border-border bg-card p-3 shadow-sm">
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline">{playbookState.execution.template.name}</Badge>
-                      <Badge variant="outline">v{playbookState.execution.template.current_version}</Badge>
+                      <Badge variant="outline" className="font-medium">{playbookState.execution.template.name}</Badge>
+                      <Badge variant="outline" className="font-mono">v{playbookState.execution.template.current_version}</Badge>
                       <Badge variant={playbookState.execution.strictMode ? "default" : "outline"}>
                         {playbookState.execution.strictMode ? tc("playbook.strictMode") : tc("playbook.standardMode")}
                       </Badge>
-                      <Badge variant="secondary">
+                      <Badge variant="secondary" className="font-medium">
                         {tc("playbook.stepsProgress", { done: playbookState.execution.progress.done, total: playbookState.execution.progress.total })}
                       </Badge>
                     </div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-2">
                       {Object.entries(playbookState.stageProgress).map(([stage, info]) => (
-                        <Badge key={stage} variant={info.total > 0 && info.done === info.total ? "default" : "outline"}>
+                        <Badge key={stage} variant={info.total > 0 && info.done === info.total ? "default" : "outline"} className="text-xs">
                           {stageLabel(stage as keyof PlaybookExecutionState["stageProgress"])} {info.done}/{info.total}
                         </Badge>
                       ))}
                     </div>
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       {playbookState.steps.map((step) => (
-                        <div key={step.id} className="flex items-center gap-2 rounded border border-border px-2 py-1">
+                        <div key={step.id} className="flex flex-col gap-2 rounded-md border border-border bg-muted/15 px-3 py-2 sm:flex-row sm:items-center">
                           <div className="min-w-0 flex-1">
-                            <div className="truncate">{step.order}. {step.title}</div>
-                            <div className="text-muted-foreground">{stageLabel(step.stage)}{step.required ? ` - ${tc("playbook.required")}` : ` - ${tc("playbook.optional")}`}</div>
+                            <div className="truncate text-sm font-medium">{step.order}. {step.title}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>{stageLabel(step.stage)}</span>
+                              <Badge variant="outline" className="text-[10px]">
+                                {step.required ? tc("playbook.required") : tc("playbook.optional")}
+                              </Badge>
+                              <Badge variant="outline" className={`text-[10px] ${stepStatusTone(step.status)}`}>
+                                {tc(`playbook.stepStatus.${step.status}`)}
+                              </Badge>
+                            </div>
                           </div>
                           <Select
                             value={step.status}
@@ -463,7 +531,7 @@ export default function CaseDetailPage() {
                               void setPlaybookStepStatus(step.statusId, value as "pending" | "in_progress" | "completed" | "skipped" | "blocked")
                             }}
                           >
-                            <SelectTrigger className="h-7 w-40"><SelectValue /></SelectTrigger>
+                            <SelectTrigger className="h-8 w-full sm:w-44"><SelectValue /></SelectTrigger>
                             <SelectContent>
                               <SelectItem value="pending">{tc("playbook.stepStatus.pending")}</SelectItem>
                               <SelectItem value="in_progress">{tc("playbook.stepStatus.in_progress")}</SelectItem>
@@ -482,32 +550,95 @@ export default function CaseDetailPage() {
               </CardContent>
             </Card>
           ) : null}
+            </TabsContent>
 
+            <TabsContent value="intel" className="mt-4 space-y-4">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("relatedAlerts")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs">
             <div className="flex gap-2"><Input value={alertSearch} onChange={(e) => setAlertSearch(e.target.value)} placeholder={tc("searchAlerts")} className="h-8" /><Select value={relationType} onValueChange={(v) => setRelationType(v as typeof relationType)}><SelectTrigger className="h-8 w-44"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="related_to">{relationLabel("related_to")}</SelectItem><SelectItem value="same_actor">{relationLabel("same_actor")}</SelectItem><SelectItem value="same_ip">{relationLabel("same_ip")}</SelectItem><SelectItem value="same_resource">{relationLabel("same_resource")}</SelectItem></SelectContent></Select></div>
             {alertSearchResults.filter((a) => !linkedAlertIds.has(a.id)).slice(0, 5).map((a) => <div key={a.id} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{a.title}</div><div className="text-muted-foreground">{a.id}</div></div><Button size="sm" variant="outline" className="h-7" onClick={() => void postJson(`/api/cases/${caseId}/alerts`, { alertId: a.id, relationType })}>{tc("add")}</Button></div>)}
-            {linkedAlerts.map((a) => <div key={a.alertId} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{a.alert?.title ?? a.alertId}</div><div className="text-muted-foreground">{a.alertId} - {formatDate(a.alert?.timestamp, locale)}</div></div><Badge variant="outline">{relationLabel(a.relationType)}</Badge>{!a.isPrimary ? <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={async () => { await fetch(`/api/cases/${caseId}/alerts?alertId=${encodeURIComponent(a.alertId)}`, { method: "DELETE" }); await loadCase() }}>{tc("remove")}</Button> : null}</div>)}
+            {linkedAlerts.map((a) => <div key={a.alertId} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{a.alert?.title ?? a.alertId}</div><div className="text-muted-foreground">{a.alertId} - {formatDate(a.alert?.timestamp, locale)}</div></div><Badge variant="outline">{relationLabel(a.relationType)}</Badge>{!a.isPrimary ? <Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={async () => { await fetch(`/api/cases/${caseId}/alerts?alertId=${encodeURIComponent(a.alertId)}`, { method: "DELETE" }); await loadCase({ silent: true }) }}>{tc("remove")}</Button> : null}</div>)}
           </CardContent></Card>
 
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("relatedLogs")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs">
             <Input value={logSearch} onChange={(e) => setLogSearch(e.target.value)} placeholder={tc("searchLogs")} className="h-8" />
             {logSearchResults.filter((l) => !linkedLogIds.has(l.id)).slice(0, 5).map((l) => <div key={l.id} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{l.message || l.id}</div><div className="text-muted-foreground">{l.id}</div></div><Button size="sm" variant="outline" className="h-7" onClick={() => void postJson(`/api/cases/${caseId}/logs`, { logId: l.id, relationType })}>{tc("add")}</Button></div>)}
-            {linkedLogs.map((l) => <div key={l.logId} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{l.log?.message || l.logId}</div><div className="text-muted-foreground">{l.logId} - {formatDate(l.log?.timestamp, locale)}</div></div><Badge variant="outline">{relationLabel(l.relationType)}</Badge><Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={async () => { await fetch(`/api/cases/${caseId}/logs?logId=${encodeURIComponent(l.logId)}`, { method: "DELETE" }); await loadCase() }}>{tc("remove")}</Button></div>)}
+            {linkedLogs.map((l) => <div key={l.logId} className="flex items-center gap-2 rounded border border-border px-2 py-1"><div className="min-w-0 flex-1"><div className="truncate">{l.log?.message || l.logId}</div><div className="text-muted-foreground">{l.logId} - {formatDate(l.log?.timestamp, locale)}</div></div><Badge variant="outline">{relationLabel(l.relationType)}</Badge><Button size="sm" variant="ghost" className="h-7 text-destructive" onClick={async () => { await fetch(`/api/cases/${caseId}/logs?logId=${encodeURIComponent(l.logId)}`, { method: "DELETE" }); await loadCase({ silent: true }) }}>{tc("remove")}</Button></div>)}
           </CardContent></Card>
+            </TabsContent>
 
+            <TabsContent value="operations" className="mt-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("tasks")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><div className="flex gap-2"><Input value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder={tc("addTask")} className="h-8" /><Button size="sm" className="h-8" onClick={() => void postJson(`/api/cases/${caseId}/tasks`, { title: newTask })}>{tc("add")}</Button></div>{tasks.map((t) => <div key={t.id} className="flex items-center gap-2 rounded border border-border px-2 py-1"><Checkbox checked={t.isDone} onCheckedChange={async (checked) => { await fetch(`/api/cases/${caseId}/tasks/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isDone: Boolean(checked) }) }); await loadCase() }} /><span className={t.isDone ? "line-through text-muted-foreground" : ""}>{t.title}</span></div>)}</CardContent></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("tasks")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><div className="flex gap-2"><Input value={newTask} onChange={(e) => setNewTask(e.target.value)} placeholder={tc("addTask")} className="h-8" /><Button size="sm" className="h-8" onClick={() => void postJson(`/api/cases/${caseId}/tasks`, { title: newTask })}>{tc("add")}</Button></div>{tasks.map((t) => <div key={t.id} className="flex items-center gap-2 rounded border border-border px-2 py-1"><Checkbox checked={t.isDone} onCheckedChange={async (checked) => { await fetch(`/api/cases/${caseId}/tasks/${t.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isDone: Boolean(checked) }) }); await loadCase({ silent: true }) }} /><span className={t.isDone ? "line-through text-muted-foreground" : ""}>{t.title}</span></div>)}</CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("notes")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Textarea value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder={tc("investigationNote")} className="min-h-[80px]" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/notes`, { body: newNote })}>{tc("addNote")}</Button>{notes.map((n) => <div key={n.id} className="rounded border border-border px-2 py-1"><div>{n.body}</div><div className="text-muted-foreground">{formatDate(n.createdAt, locale)}</div></div>)}</CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("evidence")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><div className="grid grid-cols-1 gap-2"><Input value={newEvidenceLabel} onChange={(e) => setNewEvidenceLabel(e.target.value)} placeholder={tc("evidenceLabel")} className="h-8" /><Select value={newEvidenceType} onValueChange={(v) => setNewEvidenceType(v as CaseEvidence["evidenceType"])}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="note">{tc("evidenceType.note")}</SelectItem><SelectItem value="link">{tc("evidenceType.link")}</SelectItem><SelectItem value="file">{tc("evidenceType.file")}</SelectItem><SelectItem value="hash">{tc("evidenceType.hash")}</SelectItem><SelectItem value="ioc">{tc("evidenceType.ioc")}</SelectItem></SelectContent></Select><Input value={newEvidenceUrl} onChange={(e) => setNewEvidenceUrl(e.target.value)} placeholder={tc("optionalUrl")} className="h-8" /><Input value={newEvidenceSha} onChange={(e) => setNewEvidenceSha(e.target.value)} placeholder={tc("optionalSha")} className="h-8 font-mono" /><Textarea value={newEvidenceDetails} onChange={(e) => setNewEvidenceDetails(e.target.value)} placeholder={tc("details")} className="min-h-[70px]" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/evidence`, { label: newEvidenceLabel, evidenceType: newEvidenceType, url: newEvidenceUrl || null, sha256: newEvidenceSha || null, details: newEvidenceDetails || null })}>{tc("addEvidence")}</Button></div>{evidence.map((item) => <div key={item.id} className="rounded border border-border px-2 py-1"><div className="flex items-center gap-2"><span className="font-medium">{item.label}</span><Badge variant="outline">{tc(`evidenceType.${item.evidenceType}`)}</Badge></div>{item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="block truncate text-primary underline-offset-2 hover:underline">{item.url}</a> : null}{item.sha256 ? <div className="truncate font-mono text-[10px] text-muted-foreground">{item.sha256}</div> : null}{item.details ? <div className="mt-1 text-muted-foreground">{item.details}</div> : null}</div>)}</CardContent></Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">{tc("evidence")}</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="grid grid-cols-1 gap-2">
+                  <Input value={newEvidenceLabel} onChange={(e) => setNewEvidenceLabel(e.target.value)} placeholder={tc("evidenceLabel")} className="h-8" />
+                  <Select value={newEvidenceType} onValueChange={(v) => setNewEvidenceType(v as CaseEvidence["evidenceType"])}>
+                    <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="note">{tc("evidenceType.note")}</SelectItem>
+                      <SelectItem value="link">{tc("evidenceType.link")}</SelectItem>
+                      <SelectItem value="file">{tc("evidenceType.file")}</SelectItem>
+                      <SelectItem value="hash">{tc("evidenceType.hash")}</SelectItem>
+                      <SelectItem value="ioc">{tc("evidenceType.ioc")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input value={newEvidenceUrl} onChange={(e) => setNewEvidenceUrl(e.target.value)} placeholder={tc("optionalUrl")} className="h-8" />
+                  <Input value={newEvidenceSha} onChange={(e) => setNewEvidenceSha(e.target.value)} placeholder={tc("optionalSha")} className="h-8 font-mono" />
+                  <Textarea value={newEvidenceDetails} onChange={(e) => setNewEvidenceDetails(e.target.value)} placeholder={tc("details")} className="min-h-[70px]" />
+                  <div className="space-y-1 rounded border border-border p-2">
+                    <Input
+                      type="file"
+                      className="h-8"
+                      onChange={(event) => setNewEvidenceFile(event.target.files?.[0] ?? null)}
+                    />
+                    {newEvidenceFile ? (
+                      <div className="text-[11px] text-muted-foreground">
+                        {newEvidenceFile.name} ({Math.ceil(newEvidenceFile.size / 1024)} KB)
+                      </div>
+                    ) : null}
+                    <Button size="sm" variant="outline" disabled={!newEvidenceFile || uploadingEvidenceFile} onClick={() => void uploadEvidenceFile()}>
+                      {uploadingEvidenceFile ? "Uploading..." : "Upload file as evidence"}
+                    </Button>
+                  </div>
+                  <Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/evidence`, { label: newEvidenceLabel, evidenceType: newEvidenceType, url: newEvidenceUrl || null, sha256: newEvidenceSha || null, details: newEvidenceDetails || null })}>
+                    {tc("addEvidence")}
+                  </Button>
+                </div>
+                {evidence.map((item) => (
+                  <div key={item.id} className="rounded border border-border px-2 py-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium">{item.label}</span>
+                      <Badge variant="outline">{tc(`evidenceType.${item.evidenceType}`)}</Badge>
+                    </div>
+                    {item.url ? <a href={item.url} target="_blank" rel="noreferrer" className="block truncate text-primary underline-offset-2 hover:underline">{item.url}</a> : null}
+                    {item.contentType ? <div className="truncate text-[10px] text-muted-foreground">{item.contentType}</div> : null}
+                    {item.fileSizeBytes ? <div className="truncate text-[10px] text-muted-foreground">{Math.ceil(item.fileSizeBytes / 1024)} KB</div> : null}
+                    {item.sha256 ? <div className="truncate font-mono text-[10px] text-muted-foreground">{item.sha256}</div> : null}
+                    {item.details ? <div className="mt-1 text-muted-foreground">{item.details}</div> : null}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </div>
+            </TabsContent>
 
+            <TabsContent value="response" className="mt-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("hypotheses")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Input value={newHypothesis} onChange={(e) => setNewHypothesis(e.target.value)} placeholder={tc("hypothesis")} className="h-8" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/hypotheses`, { statement: newHypothesis, confidence: 50, status: "open" })}>{tc("add")}</Button>{hypotheses.map((h) => <div key={h.id} className="rounded border border-border px-2 py-1"><div>{h.statement}</div><div className="mt-1 flex gap-1"><Badge variant="outline">{tc(`hypothesisStatus.${h.status}`)}</Badge><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/hypotheses/${h.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "confirmed" }) }); await loadCase() }}>{tc("confirm")}</Button><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/hypotheses/${h.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "rejected" }) }); await loadCase() }}>{tc("reject")}</Button></div></div>)}</CardContent></Card>
-            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("responseActions")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Select value={newActionType} onValueChange={(v) => setNewActionType(v as ResponseAction["actionType"])}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="contain_host">{tc("actionType.contain_host")}</SelectItem><SelectItem value="disable_user">{tc("actionType.disable_user")}</SelectItem><SelectItem value="block_ip">{tc("actionType.block_ip")}</SelectItem><SelectItem value="block_domain">{tc("actionType.block_domain")}</SelectItem><SelectItem value="block_hash">{tc("actionType.block_hash")}</SelectItem><SelectItem value="revoke_sessions">{tc("actionType.revoke_sessions")}</SelectItem><SelectItem value="isolate_resource">{tc("actionType.isolate_resource")}</SelectItem><SelectItem value="other">{tc("actionType.other")}</SelectItem></SelectContent></Select><Input value={newActionTarget} onChange={(e) => setNewActionTarget(e.target.value)} placeholder={tc("target")} className="h-8" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/response-actions`, { actionType: newActionType, target: newActionTarget, status: "planned" })}>{tc("add")}</Button>{responseActions.map((a) => <div key={a.id} className="rounded border border-border px-2 py-1"><div>{tc(`actionType.${a.actionType}`)} - {a.target}</div><div className="mt-1 flex gap-1"><Badge variant="outline">{tc(`responseStatus.${a.status}`)}</Badge><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/response-actions/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "completed" }) }); await loadCase() }}>{tc("complete")}</Button></div></div>)}</CardContent></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("hypotheses")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Input value={newHypothesis} onChange={(e) => setNewHypothesis(e.target.value)} placeholder={tc("hypothesis")} className="h-8" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/hypotheses`, { statement: newHypothesis, confidence: 50, status: "open" })}>{tc("add")}</Button>{hypotheses.map((h) => <div key={h.id} className="rounded border border-border px-2 py-1"><div>{h.statement}</div><div className="mt-1 flex gap-1"><Badge variant="outline">{tc(`hypothesisStatus.${h.status}`)}</Badge><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/hypotheses/${h.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "confirmed" }) }); await loadCase({ silent: true }) }}>{tc("confirm")}</Button><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/hypotheses/${h.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "rejected" }) }); await loadCase({ silent: true }) }}>{tc("reject")}</Button></div></div>)}</CardContent></Card>
+            <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("responseActions")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Select value={newActionType} onValueChange={(v) => setNewActionType(v as ResponseAction["actionType"])}><SelectTrigger className="h-8"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="contain_host">{tc("actionType.contain_host")}</SelectItem><SelectItem value="disable_user">{tc("actionType.disable_user")}</SelectItem><SelectItem value="block_ip">{tc("actionType.block_ip")}</SelectItem><SelectItem value="block_domain">{tc("actionType.block_domain")}</SelectItem><SelectItem value="block_hash">{tc("actionType.block_hash")}</SelectItem><SelectItem value="revoke_sessions">{tc("actionType.revoke_sessions")}</SelectItem><SelectItem value="isolate_resource">{tc("actionType.isolate_resource")}</SelectItem><SelectItem value="other">{tc("actionType.other")}</SelectItem></SelectContent></Select><Input value={newActionTarget} onChange={(e) => setNewActionTarget(e.target.value)} placeholder={tc("target")} className="h-8" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/response-actions`, { actionType: newActionType, target: newActionTarget, status: "planned" })}>{tc("add")}</Button>{responseActions.map((a) => <div key={a.id} className="rounded border border-border px-2 py-1"><div>{tc(`actionType.${a.actionType}`)} - {a.target}</div><div className="mt-1 flex gap-1"><Badge variant="outline">{tc(`responseStatus.${a.status}`)}</Badge><Button size="sm" variant="ghost" className="h-6 px-2" onClick={async () => { await fetch(`/api/cases/${caseId}/response-actions/${a.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "completed" }) }); await loadCase({ silent: true }) }}>{tc("complete")}</Button></div></div>)}</CardContent></Card>
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("timeline")}</CardTitle></CardHeader><CardContent className="space-y-2 text-xs"><Input value={newTimelineTitle} onChange={(e) => setNewTimelineTitle(e.target.value)} placeholder={tc("timelineEventTitle")} className="h-8" /><Button size="sm" onClick={() => void postJson(`/api/cases/${caseId}/timeline`, { eventType: "custom", title: newTimelineTitle, eventAt: new Date().toISOString() })}>{tc("add")}</Button>{timelineEvents.map((ev) => <div key={ev.id} className="rounded border border-border px-2 py-1"><div>{ev.title}</div><div className="text-muted-foreground">{tc(`timelineType.${ev.eventType}`)} - {formatDate(ev.eventAt, locale)}</div></div>)}</CardContent></Card>
           </div>
+            </TabsContent>
 
+            <TabsContent value="activity" className="mt-4">
           <Card><CardHeader className="pb-2"><CardTitle className="text-sm">{tc("activity")}</CardTitle></CardHeader><CardContent className="space-y-1">{activity.map((entry) => <div key={entry.id} className="text-xs text-muted-foreground"><span className="font-medium text-foreground">{entry.action.replace(/_/g, " ")}</span> - {formatDate(entry.createdAt, locale)}</div>)}</CardContent></Card>
+            </TabsContent>
+          </Tabs>
         </div>
       </ScrollArea>
     </DashboardLayout>
