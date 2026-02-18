@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { cn } from "@/lib/utils"
+import { useTranslations } from "next-intl"
 import { Send, Bot, User, Loader2, Shield, Zap, Search as SearchIcon, AlertTriangle } from "lucide-react"
 
 const suggestedQueries = [
@@ -38,6 +39,7 @@ const suggestedQueries = [
 ]
 
 export default function ChatbotPage() {
+  const t = useTranslations("pages")
   const [input, setInput] = useState("")
   const { messages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
@@ -59,7 +61,7 @@ export default function ChatbotPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="AI Security Assistant" />
+      <AppHeader title={t("chatbot")} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <ScrollArea className="flex-1">
           <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-4 lg:p-6">

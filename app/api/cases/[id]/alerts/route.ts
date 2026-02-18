@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { getCurrentUserAndRole, hasPermission } from "@/lib/auth/server-role"
 
 export const dynamic = "force-dynamic"
 
@@ -9,27 +10,19 @@ const addAlertSchema = z.object({
   relationType: z.enum(["related_to", "same_actor", "same_ip", "same_resource"]).optional().default("related_to"),
 })
 
-async function getRole(supabase: Awaited<ReturnType<typeof createClient>>, userId: string) {
-  const { data } = await supabase
-    .from("profiles")
-    .select("role")
-    .eq("id", userId)
-    .maybeSingle()
-  return String(data?.role ?? "").toLowerCase()
-}
-
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "cases.read"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.read" }, { status: 403 })
   }
 
   const { data, error } = await supabase
@@ -86,17 +79,14 @@ export async function POST(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const role = await getRole(supabase, user.id)
-  if (role !== "admin" && role !== "analyst") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!(await hasPermission(supabase, user, role, "cases.link_alerts"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.link_alerts" }, { status: 403 })
   }
 
   let payload: unknown
@@ -153,17 +143,14 @@ export async function DELETE(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
-  const role = await getRole(supabase, user.id)
-  if (role !== "admin" && role !== "analyst") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  if (!(await hasPermission(supabase, user, role, "cases.link_alerts"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.link_alerts" }, { status: 403 })
   }
 
   const url = new URL(request.url)
@@ -206,4 +193,3 @@ export async function DELETE(
 
   return NextResponse.json({ ok: true })
 }
-

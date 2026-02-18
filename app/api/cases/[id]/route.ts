@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { computeEscalationTarget, computeSlaStatus } from "@/lib/cases/sla"
+import { getCurrentUserAndRole, hasPermission } from "@/lib/auth/server-role"
 
 export const dynamic = "force-dynamic"
 
@@ -87,18 +88,59 @@ async function evaluateClosureReadiness(supabase: Awaited<ReturnType<typeof crea
   }
 }
 
+async function evaluatePlaybookStrictReadiness(supabase: Awaited<ReturnType<typeof createClient>>, caseId: string) {
+  const { data: execution } = await supabase
+    .from("case_playbook_executions")
+    .select("id,strict_mode,version_id")
+    .eq("case_id", caseId)
+    .maybeSingle()
+
+  if (!execution || !execution.strict_mode) {
+    return { strictMode: false, incompleteRequiredSteps: 0 }
+  }
+
+  const { data: steps } = await supabase
+    .from("playbook_template_steps")
+    .select("id,required")
+    .eq("version_id", execution.version_id)
+
+  const requiredSteps = (steps ?? []).filter((step) => step.required)
+  if (!requiredSteps.length) {
+    return { strictMode: true, incompleteRequiredSteps: 0 }
+  }
+
+  const requiredStepIds = requiredSteps.map((step) => step.id)
+  const { data: statusRows } = await supabase
+    .from("case_playbook_step_status")
+    .select("step_id,status")
+    .eq("execution_id", execution.id)
+    .in("step_id", requiredStepIds)
+
+  const doneSet = new Set(
+    (statusRows ?? [])
+      .filter((row) => row.status === "completed" || row.status === "skipped")
+      .map((row) => row.step_id)
+  )
+
+  return {
+    strictMode: true,
+    incompleteRequiredSteps: requiredStepIds.filter((stepId) => !doneSet.has(stepId)).length,
+  }
+}
+
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "cases.read"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.read" }, { status: 403 })
   }
 
   const { data: caseRow, error: caseError } = await supabase
@@ -183,6 +225,10 @@ export async function GET(
       evidenceType: item.evidence_type,
       url: item.url,
       details: item.details,
+      filePath: item.file_path,
+      fileSizeBytes: item.file_size_bytes,
+      contentType: item.content_type,
+      sha256: item.sha256,
       createdAt: item.created_at,
       createdBy: item.created_by,
     })),
@@ -235,9 +281,7 @@ export async function PATCH(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -253,6 +297,18 @@ export async function PATCH(
   const parsed = updateCaseSchema.safeParse(payload)
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid update payload" }, { status: 400 })
+  }
+
+  if (parsed.data.status === "resolved" || parsed.data.status === "closed") {
+    if (!(await hasPermission(supabase, user, role, "cases.close"))) {
+      return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.close" }, { status: 403 })
+    }
+  } else if (parsed.data.assignee !== undefined || parsed.data.assigneeUserId !== undefined) {
+    if (!(await hasPermission(supabase, user, role, "cases.assign"))) {
+      return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.assign" }, { status: 403 })
+    }
+  } else if (!(await hasPermission(supabase, user, role, "cases.update"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.update" }, { status: 403 })
   }
 
   const updates: Record<string, unknown> = { updated_by: user.id }
@@ -284,6 +340,7 @@ export async function PATCH(
 
   if (parsed.data.status === "resolved" || parsed.data.status === "closed") {
     const readiness = await evaluateClosureReadiness(supabase, id)
+    const playbookReadiness = await evaluatePlaybookStrictReadiness(supabase, id)
     const { data: existing } = await supabase
       .from("alert_cases")
       .select("root_cause,containment_summary,recovery_summary,post_incident_summary")
@@ -299,6 +356,11 @@ export async function PATCH(
       return NextResponse.json({
         error: "Case is not ready to resolve. Add evidence, completed response action, timeline, root cause, and containment summary.",
         closureReadiness: readiness,
+      }, { status: 400 })
+    }
+    if (playbookReadiness.strictMode && playbookReadiness.incompleteRequiredSteps > 0) {
+      return NextResponse.json({
+        error: `Strict playbook is enabled. Complete ${playbookReadiness.incompleteRequiredSteps} required step(s) before resolving.`,
       }, { status: 400 })
     }
 

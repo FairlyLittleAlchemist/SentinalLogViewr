@@ -4,6 +4,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { TrendingUp, TrendingDown, AlertTriangle, Activity, Clock, Shield } from "lucide-react"
 import type { ThreatMetric } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
+import { useTranslations } from "next-intl"
 
 const icons = [AlertTriangle, Shield, Activity, Clock]
 
@@ -12,6 +13,7 @@ interface MetricCardsProps {
 }
 
 export function MetricCards({ metrics }: MetricCardsProps) {
+  const t = useTranslations("dashboard")
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric, index) => {
@@ -59,7 +61,7 @@ export function MetricCards({ metrics }: MetricCardsProps) {
                 )}>
                   {metric.change}%
                 </span>
-                <span className="text-xs text-muted-foreground">vs last 24h</span>
+                <span className="text-xs text-muted-foreground">{t("vsLast24h")}</span>
               </div>
             </CardContent>
           </Card>

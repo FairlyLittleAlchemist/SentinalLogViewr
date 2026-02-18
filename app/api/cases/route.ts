@@ -3,6 +3,7 @@ import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
 import { computeDueAt, computeEscalationTarget, computeSlaStatus } from "@/lib/cases/sla"
 import { getPlaybookForAlertType } from "@/lib/cases/playbooks"
+import { hasPermission } from "@/lib/auth/server-role"
 
 export const dynamic = "force-dynamic"
 
@@ -12,6 +13,7 @@ const createCaseSchema = z.object({
   priority: z.enum(["low", "medium", "high", "critical"]).optional().default("medium"),
   assignee: z.string().nullable().optional(),
   assigneeUserId: z.string().uuid().nullable().optional(),
+  playbookId: z.string().uuid().nullable().optional(),
 })
 
 async function syncCaseEscalations(supabase: Awaited<ReturnType<typeof createClient>>, actorId: string) {
@@ -139,8 +141,8 @@ export async function POST(request: Request) {
   }
 
   const role = await getCurrentUserRole(supabase, user.id)
-  if (role !== "admin" && role !== "analyst") {
-    return NextResponse.json({ error: "Forbidden: only admin/analyst can create cases" }, { status: 403 })
+  if (!(await hasPermission(supabase, user, role, "cases.create"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "cases.create" }, { status: 403 })
   }
 
   let payload: unknown
@@ -175,7 +177,31 @@ export async function POST(request: Request) {
     resolvedAssignee = assigneeProfile?.full_name || assigneeProfile?.email || resolvedAssignee
   }
 
-  const playbook = getPlaybookForAlertType(alert.type)
+  const fallbackPlaybook = getPlaybookForAlertType(alert.type)
+  let playbookQuery = supabase
+    .from("playbook_templates")
+    .select("id,key,current_version,strict_mode,sla_target_minutes")
+    .eq("is_active", true)
+    .limit(1)
+
+  if (parsed.data.playbookId) {
+    playbookQuery = playbookQuery.eq("id", parsed.data.playbookId)
+  } else {
+    playbookQuery = playbookQuery
+      .eq("alert_type", alert.type ?? "")
+      .order("updated_at", { ascending: false })
+  }
+
+  const { data: templatePlaybook } = await playbookQuery.maybeSingle()
+
+  if (parsed.data.playbookId && !templatePlaybook) {
+    return NextResponse.json({ error: "Selected playbook is not available" }, { status: 400 })
+  }
+
+  const playbook = {
+    key: templatePlaybook?.key ?? fallbackPlaybook.key,
+    tasks: fallbackPlaybook.tasks,
+  }
   const dueAt = computeDueAt(parsed.data.priority)
   const slaStatus = computeSlaStatus(dueAt)
 
@@ -210,7 +236,52 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: caseError?.message ?? "Failed to create case" }, { status: 500 })
   }
 
-  if (playbook.tasks.length > 0) {
+  if (templatePlaybook) {
+    const { data: version } = await supabase
+      .from("playbook_template_versions")
+      .select("id,version")
+      .eq("template_id", templatePlaybook.id)
+      .eq("version", templatePlaybook.current_version)
+      .maybeSingle()
+
+    if (version) {
+      const { data: execution } = await supabase
+        .from("case_playbook_executions")
+        .insert({
+          case_id: createdCase.id,
+          template_id: templatePlaybook.id,
+          version_id: version.id,
+          strict_mode: templatePlaybook.strict_mode,
+          started_by: user.id,
+        })
+        .select("id")
+        .single()
+
+      const { data: steps } = await supabase
+        .from("playbook_template_steps")
+        .select("id,title")
+        .eq("version_id", version.id)
+        .order("step_order", { ascending: true })
+
+      if (execution && (steps ?? []).length > 0) {
+        await supabase
+          .from("case_playbook_step_status")
+          .insert((steps ?? []).map((step) => ({
+            execution_id: execution.id,
+            step_id: step.id,
+            status: "pending",
+          })))
+
+        await supabase
+          .from("alert_case_tasks")
+          .insert((steps ?? []).map((step) => ({
+            case_id: createdCase.id,
+            title: step.title,
+            created_by: user.id,
+          })))
+      }
+    }
+  } else if (playbook.tasks.length > 0) {
     const tasksPayload = playbook.tasks.map((taskTitle) => ({
       case_id: createdCase.id,
       title: taskTitle,

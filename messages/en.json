@@ -1,0 +1,452 @@
+{
+  "app": {
+    "name": "Sentinel Command",
+    "subtitle": "Azure SIEM"
+  },
+  "common": {
+    "navigation": "Navigation",
+    "accountSettings": "Account settings",
+    "adminDashboard": "Admin dashboard",
+    "signOut": "Sign out",
+    "searchPlaceholder": "Search logs, alerts...",
+    "notifications": "Notifications"
+  },
+  "roles": {
+    "admin": "Administrator",
+    "analyst": "Analyst",
+    "viewer": "Viewer"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "alerts": "Alerts",
+    "logs": "Log Viewer",
+    "recommendations": "Recommendations",
+    "cases": "Cases",
+    "board": "Board",
+    "playbooks": "Playbooks",
+    "aiAssistant": "AI Assistant",
+    "admin": "Admin Dashboard"
+  },
+  "language": {   
+    "label": "Language",
+    "english": "English",
+    "french": "French"
+  },
+  "dashboard": {
+    "headerTitle": "Security Overview",
+    "title": "Threat Intelligence Dashboard",
+    "subtitle": "Real-time security monitoring and threat detection for your Azure environment.",
+    "loading": "Loading dashboard stats...",
+    "alertTrend": "Alert Trend (24h)",
+    "last24h": "Last 24 hours (data)",
+    "severityDistribution": "Severity Distribution",
+    "recentAlerts": "Recent Alerts",
+    "viewAll": "View all",
+    "noRecentAlerts": "No recent alerts available.",
+    "topAttackOrigins": "Top Attack Origins",
+    "noAttackSourceData": "No attack source data available.",
+    "vsLast24h": "vs last 24h"
+  },
+  "pages": {
+    "alerts": "Alert Management",
+    "logs": "Log Viewer",
+    "cases": "Case Management",
+    "caseDetails": "Case Details",
+    "board": "Investigation Board",
+    "playbooks": "Playbooks",
+    "account": "Account Settings",
+    "chatbot": "AI Security Assistant",
+    "admin": "Admin Dashboard",
+    "userManagement": "User Management",
+    "recommendations": "Recommendations"
+  },
+  "board": {
+    "nodeLibrary": "Node Library",
+    "searchPlaceholder": "Search alerts/logs...",
+    "alertsTab": "Alerts",
+    "logsTab": "Logs",
+    "boardManagement": "Board Management",
+    "optionalBoardName": "Optional board name",
+    "caseBoards": "Case Boards",
+    "createMaster": "Create Master",
+    "createSub": "Create Sub ({count}/3)",
+    "emptySubBoard": "Empty sub-board",
+    "noMasterBoard": "No master board",
+    "openCaseBoardHint": "Open a case board (`/board?caseId=...`) to manage case hierarchy.",
+    "myPersonalBoards": "My Personal Boards",
+    "personalBoardExists": "Personal Board Exists",
+    "createPersonalBoard": "Create Personal Board",
+    "noPersonalBoards": "No personal boards.",
+    "delete": "Delete",
+    "saving": "Saving...",
+    "savedAt": "Saved {time}",
+    "ready": "Ready",
+    "save": "Save",
+    "layout": "Layout",
+    "apply": "Apply",
+    "currentBoard": "Current board",
+    "noBoardSelected": "No board selected",
+    "viewOnly": "View only",
+    "viewOnlyHint": "You can view this board, but editing is disabled for your role.",
+    "selectBoardHint": "Create or select a board to start mapping evidence.",
+    "dragHint": "Drag alerts/logs from the library and connect with edges.",
+    "errors": {
+      "createPersonalDenied": "You are not allowed to create personal boards.",
+      "createCaseDenied": "You are not allowed to create case boards.",
+      "deleteDenied": "You are not allowed to delete boards."
+    }
+  },
+  "recommendations": {
+    "title": "Security Recommendations",
+    "subtitle": "Prioritized actions to strengthen your security posture based on current threat intelligence.",
+    "completionProgress": "Completion Progress",
+    "completionSummary": "{completed} of {total} recommendations implemented",
+    "criticalPending": "Critical Pending",
+    "criticalPendingHint": "Immediate action required for maximum risk reduction",
+    "quickWins": "Quick Wins Available",
+    "quickWinsHint": "Low-effort actions with significant security impact",
+    "loading": "Loading recommendations...",
+    "description": "Description",
+    "expectedImpact": "Expected Impact",
+    "relatedAlerts": "Related Alerts",
+    "startImplementation": "Start Implementation",
+    "createTicket": "Create Ticket",
+    "noRecommendations": "No recommendations available.",
+    "effortLow": "Low Effort",
+    "effortMedium": "Medium Effort",
+    "effortHigh": "High Effort",
+    "statusPending": "Pending",
+    "statusInProgress": "In Progress",
+    "statusCompleted": "Completed"
+  },
+  "cases": {
+    "title": "Cases",
+    "subtitle": "Track investigation progress, notes, tasks, and evidence.",
+    "totalCount": "{count} total",
+    "loading": "Loading cases...",
+    "empty": "No cases yet. Create one from an alert in <alertsLink>Alert Management</alertsLink>.",
+    "alertId": "Alert {id}",
+    "assignee": "Assignee: {value}",
+    "unassigned": "Unassigned",
+    "updated": "Updated: {value}",
+    "openCase": "Open Case",
+    "status": {
+      "open": "Open",
+      "in_progress": "In progress",
+      "resolved": "Resolved",
+      "closed": "Closed"
+    },
+    "errors": {
+      "loadCases": "Failed to load cases",
+      "loadCasesWithStatus": "Failed to load cases ({status})"
+    }
+  },
+  "caseDetails": {
+    "loadingCase": "Loading case...",
+    "caseNotFound": "Case not found",
+    "caseTitle": "Case {id}",
+    "openInBoard": "Open In Board",
+    "status": "Status",
+    "priority": "Priority",
+    "sla": "SLA",
+    "due": "Due",
+    "statusValue": {
+      "open": "Open",
+      "in_progress": "In progress",
+      "resolved": "Resolved",
+      "closed": "Closed"
+    },
+    "priorityValue": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High",
+      "critical": "Critical"
+    },
+    "slaStatus": {
+      "on_track": "on track",
+      "at_risk": "at risk",
+      "breached": "breached"
+    },
+    "workflow": {
+      "title": "SOC Workflow",
+      "disposition": "Disposition",
+      "dispositionValue": {
+        "true_positive": "True Positive",
+        "benign_true_positive": "Benign TP",
+        "false_positive": "False Positive",
+        "duplicate": "Duplicate"
+      },
+      "businessImpact": "Business impact",
+      "rootCause": "Root cause",
+      "containmentSummary": "Containment summary",
+      "recoverySummary": "Recovery summary",
+      "postIncidentSummary": "Post-incident summary",
+      "save": "Save Workflow",
+      "resolve": "Resolve",
+      "close": "Close",
+      "readiness": {
+        "evidence": "Evidence",
+        "response": "Response",
+        "timeline": "Timeline",
+        "hypothesis": "Hypothesis",
+        "logsLinked": "Logs linked"
+      }
+    },
+    "playbook": {
+      "title": "Playbook Execution",
+      "selectTemplate": "Select playbook template",
+      "bind": "Bind Playbook",
+      "reseed": "Re-seed Missing Tasks",
+      "strictMode": "Strict mode",
+      "standardMode": "Standard mode",
+      "stepsProgress": "{done}/{total} steps",
+      "required": "required",
+      "optional": "optional",
+      "noneBound": "No playbook bound to this case yet.",
+      "stepStatus": {
+        "pending": "Pending",
+        "in_progress": "In progress",
+        "completed": "Completed",
+        "skipped": "Skipped",
+        "blocked": "Blocked"
+      }
+    },
+    "stage": {
+      "triage": "Triage",
+      "investigation": "Investigation",
+      "containment": "Containment",
+      "eradication_recovery": "Eradication/Recovery",
+      "post_incident": "Post Incident"
+    },
+    "relation": {
+      "primary": "Primary",
+      "related_to": "Related",
+      "same_actor": "Same actor",
+      "same_ip": "Same IP",
+      "same_resource": "Same resource"
+    },
+    "relatedAlerts": "Related Alerts",
+    "searchAlerts": "Search alerts",
+    "relatedLogs": "Related Logs",
+    "searchLogs": "Search logs",
+    "add": "Add",
+    "remove": "Remove",
+    "tasks": "Tasks",
+    "addTask": "Add task",
+    "notes": "Notes",
+    "investigationNote": "Investigation note",
+    "addNote": "Add note",
+    "evidence": "Evidence",
+    "evidenceLabel": "Evidence label",
+    "evidenceType": {
+      "note": "Note",
+      "link": "Link",
+      "file": "File",
+      "hash": "Hash",
+      "ioc": "IOC"
+    },
+    "optionalUrl": "URL (optional)",
+    "optionalSha": "SHA-256 (optional)",
+    "details": "Details",
+    "addEvidence": "Add evidence",
+    "hypotheses": "Hypotheses",
+    "hypothesis": "Hypothesis",
+    "hypothesisStatus": {
+      "open": "Open",
+      "confirmed": "Confirmed",
+      "rejected": "Rejected"
+    },
+    "confirm": "Confirm",
+    "reject": "Reject",
+    "responseActions": "Response Actions",
+    "actionType": {
+      "contain_host": "Contain host",
+      "disable_user": "Disable user",
+      "block_ip": "Block IP",
+      "block_domain": "Block domain",
+      "block_hash": "Block hash",
+      "revoke_sessions": "Revoke sessions",
+      "isolate_resource": "Isolate resource",
+      "other": "Other"
+    },
+    "target": "Target",
+    "responseStatus": {
+      "planned": "Planned",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "complete": "Complete",
+    "timeline": "Timeline",
+    "timelineEventTitle": "Timeline event title",
+    "timelineType": {
+      "first_seen": "First seen",
+      "detection": "Detection",
+      "triage": "Triage",
+      "containment": "Containment",
+      "eradication": "Eradication",
+      "recovery": "Recovery",
+      "post_incident": "Post Incident",
+      "custom": "Custom"
+    },
+    "activity": "Activity",
+    "errors": {
+      "loadWorkspace": "Failed to load case workspace",
+      "loadCase": "Failed to load case",
+      "updateCase": "Case update failed"
+    }
+  },
+  "playbooks": {
+    "loading": "Loading playbooks...",
+    "disabled": "Playbooks are currently disabled. Enable the experimental feature in Admin Dashboard.",
+    "subtitle": "Manage playbook templates, publish versions, and enforce strict case execution.",
+    "metrics": {
+      "mtta": "MTTA",
+      "mttr": "MTTR",
+      "reopenRate": "Reopen Rate",
+      "falsePositive": "False Positive"
+    },
+    "library": {
+      "title": "Playbook Library",
+      "empty": "No playbooks yet."
+    },
+    "state": {
+      "active": "Active",
+      "inactive": "Inactive"
+    },
+    "editor": {
+      "title": "Playbook Editor",
+      "selectPlaybook": "Select a playbook to edit.",
+      "name": "Name",
+      "description": "Description",
+      "strictMode": "Strict Mode",
+      "required": "Required",
+      "stepLabel": "Step {index}",
+      "addStep": "Add Step",
+      "changeNotes": "Change notes for this draft version",
+      "saveDraft": "Save Draft Version",
+      "saveApprove": "Save + Approve",
+      "versionHistory": "Version History"
+    },
+    "create": {
+      "title": "Create Playbook",
+      "stepTitle": "Step {index} title",
+      "button": "Create"
+    },
+    "stage": {
+      "triage": "Triage",
+      "investigation": "Investigation",
+      "containment": "Containment",
+      "eradication_recovery": "Eradication/Recovery",
+      "post_incident": "Post Incident"
+    },
+    "versionStatus": {
+      "draft": "draft",
+      "approved": "approved",
+      "archived": "archived"
+    },
+    "alertType": {
+      "incident": "Incident",
+      "security_event": "Security Event",
+      "activity": "Activity",
+      "firewall": "Firewall"
+    },
+    "approve": "Approve",
+    "rollback": "Rollback",
+    "remove": "Remove"
+  },
+  "logs": {
+    "subtitle": "Browse and analyze security logs from Azure Sentinel data connectors.",
+    "searchPlaceholder": "Search logs by message, user, IP address...",
+    "filters": {
+      "severity": "Severity",
+      "allSeverity": "All Severity",
+      "source": "Source",
+      "allSources": "All Sources",
+      "noisiest": "Noisiest",
+      "topSources": "Top {count} Sources"
+    },
+    "actions": {
+      "refresh": "Refresh logs",
+      "export": "Export logs"
+    },
+    "showingEntries": "Showing {shown} of {total} log entries",
+    "pageOf": "Page {page} of {total}",
+    "loading": "Loading logs...",
+    "columns": {
+      "timestamp": "Timestamp",
+      "severity": "Severity",
+      "source": "Source",
+      "message": "Message",
+      "ipAddress": "IP Address",
+      "user": "User"
+    },
+    "severity": {
+      "critical": "Critical",
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low",
+      "informational": "Info"
+    },
+    "detail": {
+      "actor": "Actor",
+      "resource": "Resource",
+      "status": "Status",
+      "eventData": "Event Data",
+      "rawPayload": "Raw payload"
+    },
+    "pagination": {
+      "previous": "Previous",
+      "next": "Next",
+      "perPage": "Showing {count} per page"
+    },
+    "emptyFiltered": "No logs match your filters.",
+    "unknown": "Unknown",
+    "noMessage": "No message provided.",
+    "payloadAttached": "Event payload attached. Expand to view.",
+    "errors": {
+      "load": "Failed to load logs",
+      "loadWithStatus": "Failed to load logs ({status})"
+    }
+  },
+  "auth": {
+    "accessDenied": "Access denied",
+    "accessDeniedDescription": "Your account does not have permission to view this page. Contact an admin to request access.",
+    "goToDashboard": "Go to dashboard",
+    "accountSettings": "Account settings",
+    "unknownAuthError": "Unknown authentication error.",
+    "pleaseSignIn": "Please sign in to continue.",
+    "authUnavailable": "Auth service is not reachable. Ensure Supabase local stack is running on http://127.0.0.1:54321.",
+    "confirmEmail": "Check your email to confirm your account before signing in.",
+    "resetEmailSent": "Password reset email sent. Check your inbox.",
+    "accessTitle": "Sentinel Command Access",
+    "secureLogin": "Secure Login",
+    "signInTab": "Sign in",
+    "signUpTab": "Sign up",
+    "resetTab": "Reset",
+    "email": "Email",
+    "emailPlaceholder": "you@company.com",
+    "password": "Password",
+    "signingIn": "Signing in...",
+    "signIn": "Sign in",
+    "fullName": "Full name",
+    "fullNamePlaceholder": "Alex Morgan",
+    "createStrongPassword": "Create a strong password",
+    "creatingAccount": "Creating account...",
+    "createAccount": "Create account",
+    "newAccountRoleHint": "New accounts start as Viewer. An admin can upgrade your role.",
+    "sending": "Sending...",
+    "sendResetLink": "Send reset link",
+    "useRecoveryLink": "Use the password recovery link from your email to continue.",
+    "passwordLength": "Password must be at least 8 characters.",
+    "passwordMismatch": "Passwords do not match.",
+    "passwordUpdated": "Password updated. Redirecting to dashboard...",
+    "updatePasswordTitle": "Update your password",
+    "newPassword": "New password",
+    "confirmPassword": "Confirm password",
+    "repeatPassword": "Repeat your password",
+    "updating": "Updating...",
+    "updatePassword": "Update password"
+  }
+}

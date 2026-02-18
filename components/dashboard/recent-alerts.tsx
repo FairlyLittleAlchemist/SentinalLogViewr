@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge"
 import type { Alert } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
 import Link from "next/link"
+import { useLocale, useTranslations } from "next-intl"
 
 const severityStyles = {
   critical: "bg-destructive/15 text-destructive border-destructive/30",
@@ -20,25 +21,22 @@ const statusStyles = {
   dismissed: "bg-muted text-muted-foreground",
 }
 
-function formatTime(timestamp: string) {
-  const date = new Date(timestamp)
-  return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })
-}
-
 interface RecentAlertsProps {
   alerts: Alert[]
 }
 
 export function RecentAlerts({ alerts }: RecentAlertsProps) {
+  const t = useTranslations("dashboard")
+  const locale = useLocale()
   const recentAlerts = alerts.slice(0, 5)
 
   return (
     <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-foreground">Recent Alerts</CardTitle>
+          <CardTitle className="text-sm font-semibold text-foreground">{t("recentAlerts")}</CardTitle>
           <Link href="/alerts" className="text-xs font-medium text-primary transition-all hover:underline hover:opacity-80">
-            View all
+            {t("viewAll")}
           </Link>
         </div>
       </CardHeader>
@@ -46,7 +44,7 @@ export function RecentAlerts({ alerts }: RecentAlertsProps) {
         <div className="flex flex-col gap-3">
           {recentAlerts.length === 0 && (
             <div className="rounded-lg border border-border bg-secondary/30 p-4 text-xs text-muted-foreground">
-              No recent alerts available.
+              {t("noRecentAlerts")}
             </div>
           )}
           {recentAlerts.map((alert, index) => (
@@ -64,7 +62,7 @@ export function RecentAlerts({ alerts }: RecentAlertsProps) {
               <div className="flex flex-1 flex-col gap-1.5">
                 <div className="flex items-start justify-between gap-2">
                   <span className="text-xs font-medium leading-tight text-foreground">{alert.title}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{formatTime(alert.timestamp)}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{new Date(alert.timestamp).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", timeZone: "UTC" })}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[alert.severity])}>

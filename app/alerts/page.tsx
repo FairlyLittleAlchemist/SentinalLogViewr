@@ -64,6 +64,7 @@ import { vs2015 } from "react-syntax-highlighter/dist/esm/styles/hljs"
 import xmlFormat from "xml-formatter"
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useTranslations } from "next-intl"
 
 const severityStyles = {
   critical: "bg-destructive/15 text-destructive border-destructive/30",
@@ -148,6 +149,7 @@ type CaseTask = { id: string; title: string; isDone: boolean; dueAt: string | nu
 type CaseEvidence = { id: string; label: string; evidenceType: string; url: string | null; details: string | null }
 type CaseActivity = { id: string; action: string; createdAt: string; details: Record<string, unknown> }
 type CaseAssigneeHint = { id: string; name: string; email: string; role: string; openCases: number }
+type PlaybookOption = { id: string; name: string; key: string; isActive: boolean }
 
 const TYPE_TABS: Array<{ type: AlertType; label: string }> = [
   { type: "incident", label: "Incidents" },
@@ -421,6 +423,7 @@ function FirewallAlertsList(props: AlertsListProps) {
 }
 
 export default function AlertsPage() {
+  const t = useTranslations("pages")
   const searchParams = useSearchParams()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [search, setSearch] = useState("")
@@ -462,6 +465,8 @@ export default function AlertsPage() {
   const [caseActivity, setCaseActivity] = useState<CaseActivity[]>([])
   const [caseAssignees, setCaseAssignees] = useState<CaseAssigneeHint[]>([])
   const [selectedAssigneeUserId, setSelectedAssigneeUserId] = useState<string>("")
+  const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookOption[]>([])
+  const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>("")
   const [caseLoading, setCaseLoading] = useState(false)
   const [caseNoteInput, setCaseNoteInput] = useState("")
   const [caseTaskInput, setCaseTaskInput] = useState("")
@@ -638,8 +643,32 @@ export default function AlertsPage() {
     setCaseAssignees(payload.assignees ?? [])
   }
 
+  async function loadPlaybookOptions(alertType: AlertType | "") {
+    const query = alertType ? `?alertType=${encodeURIComponent(alertType)}&isActive=true` : "?isActive=true"
+    const response = await fetch(`/api/playbooks${query}`)
+    if (!response.ok) throw new Error(`Failed to load playbooks (${response.status})`)
+    const payload = await response.json() as {
+      playbooks: Array<{ id: string; name: string; key: string; isActive: boolean }>
+    }
+    const options = (payload.playbooks ?? []).map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      key: entry.key,
+      isActive: entry.isActive,
+    }))
+    setAvailablePlaybooks(options)
+    setSelectedPlaybookId((current) => {
+      if (current && options.some((entry) => entry.id === current)) return current
+      return options[0]?.id ?? ""
+    })
+  }
+
   async function createCaseForSelectedAlert() {
     if (!selectedAlert) return
+    if (availablePlaybooks.length > 0 && !selectedPlaybookId) {
+      setLoadError("Select a playbook before creating a case.")
+      return
+    }
     setCaseLoading(true)
     try {
       const response = await fetch("/api/cases", {
@@ -650,6 +679,7 @@ export default function AlertsPage() {
           priority: "medium",
           assignee: selectedAlert.assignee,
           assigneeUserId: selectedAssigneeUserId || null,
+          playbookId: selectedPlaybookId || null,
         }),
       })
       if (!response.ok) throw new Error(`Failed to create case (${response.status})`)
@@ -862,8 +892,14 @@ export default function AlertsPage() {
       setCaseTasks([])
       setCaseEvidence([])
       setCaseActivity([])
+      setAvailablePlaybooks([])
+      setSelectedPlaybookId("")
       return
     }
+    void loadPlaybookOptions((selectedAlert.type || selectedAlert.parsedFacts?.kind || "") as AlertType | "")
+      .catch((error) => {
+        setLoadError(error instanceof Error ? error.message : "Failed to load playbooks")
+      })
     void loadCorrelation(selectedAlert.id)
     void loadCaseForAlert(selectedAlert.id)
   }, [selectedAlert?.id])
@@ -876,7 +912,7 @@ export default function AlertsPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="Alert Management" />
+      <AppHeader title={t("alerts")} />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 p-4 lg:p-6">
           <div className="flex flex-col gap-1">
@@ -1338,7 +1374,7 @@ export default function AlertsPage() {
                     {!caseItem ? (
                       <div className="rounded-lg border border-border bg-secondary/30 p-4">
                         <p className="text-xs text-muted-foreground">No case exists for this alert.</p>
-                        <div className="mt-2">
+                        <div className="mt-2 flex flex-col gap-2">
                           <Select value={selectedAssigneeUserId || "none"} onValueChange={setSelectedAssigneeUserId}>
                             <SelectTrigger className="h-8 bg-secondary md:w-80">
                               <SelectValue placeholder="Optional: assign on create" />
@@ -1348,6 +1384,18 @@ export default function AlertsPage() {
                               {caseAssignees.map((entry) => (
                                 <SelectItem key={entry.id} value={entry.id}>
                                   {entry.name} ({entry.openCases} open)
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <Select value={selectedPlaybookId} onValueChange={setSelectedPlaybookId}>
+                            <SelectTrigger className="h-8 bg-secondary md:w-80">
+                              <SelectValue placeholder="Select playbook" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availablePlaybooks.map((entry) => (
+                                <SelectItem key={entry.id} value={entry.id}>
+                                  {entry.name} ({entry.key})
                                 </SelectItem>
                               ))}
                             </SelectContent>

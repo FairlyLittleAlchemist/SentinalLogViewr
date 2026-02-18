@@ -9,9 +9,11 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { createClient } from "@/lib/supabase/client"
 import { useAuth } from "@/components/auth/auth-provider"
+import { useTranslations } from "next-intl"
 import { roleLabels } from "@/lib/auth/roles"
 
 export default function AccountPage() {
+  const t = useTranslations("pages")
   const supabase = useMemo(() => createClient(), [])
   const { user, profile, role, refreshProfile } = useAuth()
   const [fullName, setFullName] = useState("")
@@ -85,7 +87,7 @@ export default function AccountPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="Account Settings" />
+      <AppHeader title={t("account")} />
       <div className="flex flex-1 flex-col gap-6 overflow-auto p-4 lg:p-6">
         <Card className="bg-card border-border">
           <CardHeader>

@@ -9,6 +9,7 @@ import { SeverityChart } from "@/components/dashboard/severity-chart"
 import { RecentAlerts } from "@/components/dashboard/recent-alerts"
 import { AttackSources } from "@/components/dashboard/attack-sources"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useTranslations } from "next-intl"
 import type {
   Alert,
   AttackSource,
@@ -34,6 +35,7 @@ const initialDashboardData: DashboardPayload = {
 }
 
 export default function DashboardPage() {
+  const t = useTranslations("dashboard")
   const [dashboardData, setDashboardData] = useState<DashboardPayload>(initialDashboardData)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -71,13 +73,13 @@ export default function DashboardPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="Security Overview" />
+      <AppHeader title={t("headerTitle")} />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 p-4 lg:p-6">
           <div className="animate-pop-in flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-foreground">Threat Intelligence Dashboard</h2>
+            <h2 className="text-lg font-semibold text-foreground">{t("title")}</h2>
             <p className="text-sm text-muted-foreground">
-              Real-time security monitoring and threat detection for your Azure environment.
+              {t("subtitle")}
             </p>
           </div>
           {loadError && (
@@ -87,7 +89,7 @@ export default function DashboardPage() {
           )}
           {isLoading ? (
             <div className="animate-slide-up rounded-lg border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
-              Loading dashboard stats...
+              {t("loading")}
             </div>
           ) : (
             <MetricCards metrics={dashboardData.threatMetrics} />

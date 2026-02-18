@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import type { Recommendation } from "@/lib/mock-data"
 import { cn } from "@/lib/utils"
+import { useTranslations } from "next-intl"
 import {
   ShieldCheck,
   ChevronDown,
@@ -29,19 +30,20 @@ const priorityStyles = {
   low: "bg-[hsl(142,71%,45%)]/15 text-[hsl(142,71%,45%)] border-[hsl(142,71%,45%)]/30",
 }
 
-const effortLabels = {
-  low: "Low Effort",
-  medium: "Medium Effort",
-  high: "High Effort",
-}
-
-const statusConfig = {
-  pending: { icon: Clock, label: "Pending", color: "text-muted-foreground" },
-  in_progress: { icon: Loader2, label: "In Progress", color: "text-[hsl(38,92%,50%)]" },
-  completed: { icon: CheckCircle2, label: "Completed", color: "text-[hsl(142,71%,45%)]" },
-}
-
 export default function RecommendationsPage() {
+  const t = useTranslations("pages")
+  const tr = useTranslations("recommendations")
+  const effortLabels = {
+    low: tr("effortLow"),
+    medium: tr("effortMedium"),
+    high: tr("effortHigh"),
+  }
+
+  const statusConfig = {
+    pending: { icon: Clock, label: tr("statusPending"), color: "text-muted-foreground" },
+    in_progress: { icon: Loader2, label: tr("statusInProgress"), color: "text-[hsl(38,92%,50%)]" },
+    completed: { icon: CheckCircle2, label: tr("statusCompleted"), color: "text-[hsl(142,71%,45%)]" },
+  }
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [actions, setActions] = useState<Recommendation[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -86,13 +88,13 @@ export default function RecommendationsPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="Recommendations" />
+      <AppHeader title={t("recommendations")} />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 p-4 lg:p-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-foreground">Security Recommendations</h2>
+            <h2 className="text-lg font-semibold text-foreground">{tr("title")}</h2>
             <p className="text-sm text-muted-foreground">
-              Prioritized actions to strengthen your security posture based on current threat intelligence.
+              {tr("subtitle")}
             </p>
           </div>
 
@@ -102,7 +104,7 @@ export default function RecommendationsPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">Completion Progress</span>
+                    <span className="text-xs text-muted-foreground">{tr("completionProgress")}</span>
                     <span className="text-2xl font-bold text-foreground">{completionPercentage}%</span>
                   </div>
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
@@ -111,7 +113,7 @@ export default function RecommendationsPage() {
                 </div>
                 <Progress value={completionPercentage} className="mt-3 h-1.5 bg-secondary" />
                 <span className="mt-1.5 text-[10px] text-muted-foreground">
-                  {completedCount} of {totalCount} recommendations implemented
+                  {tr("completionSummary", { completed: completedCount, total: totalCount })}
                 </span>
               </CardContent>
             </Card>
@@ -120,7 +122,7 @@ export default function RecommendationsPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">Critical Pending</span>
+                    <span className="text-xs text-muted-foreground">{tr("criticalPending")}</span>
                     <span className="text-2xl font-bold text-foreground">{criticalPending}</span>
                   </div>
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-destructive/10">
@@ -128,7 +130,7 @@ export default function RecommendationsPage() {
                   </div>
                 </div>
                 <span className="mt-3 block text-[10px] text-muted-foreground">
-                  Immediate action required for maximum risk reduction
+                  {tr("criticalPendingHint")}
                 </span>
               </CardContent>
             </Card>
@@ -137,7 +139,7 @@ export default function RecommendationsPage() {
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">Quick Wins Available</span>
+                    <span className="text-xs text-muted-foreground">{tr("quickWins")}</span>
                     <span className="text-2xl font-bold text-foreground">
                       {actions.filter((a) => a.effort === "low" && a.status !== "completed").length}
                     </span>
@@ -147,7 +149,7 @@ export default function RecommendationsPage() {
                   </div>
                 </div>
                 <span className="mt-3 block text-[10px] text-muted-foreground">
-                  Low-effort actions with significant security impact
+                  {tr("quickWinsHint")}
                 </span>
               </CardContent>
             </Card>
@@ -165,7 +167,7 @@ export default function RecommendationsPage() {
             {isLoading && (
               <Card className="bg-card border-border">
                 <CardContent className="p-4 text-xs text-muted-foreground">
-                  Loading recommendations...
+                  {tr("loading")}
                 </CardContent>
               </Card>
             )}
@@ -239,15 +241,15 @@ export default function RecommendationsPage() {
                       <div className="border-t border-border px-4 pb-4 pt-3">
                         <div className="flex flex-col gap-4">
                           <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Description</span>
+                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">{tr("description")}</span>
                             <p className="text-xs leading-relaxed text-foreground">{action.description}</p>
                           </div>
                           <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Expected Impact</span>
+                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">{tr("expectedImpact")}</span>
                             <p className="text-xs leading-relaxed text-[hsl(142,71%,45%)]">{action.impact}</p>
                           </div>
                           <div className="flex flex-col gap-1">
-                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">Related Alerts</span>
+                            <span className="text-[10px] font-semibold uppercase text-muted-foreground">{tr("relatedAlerts")}</span>
                             <div className="flex flex-wrap gap-1.5">
                               {action.relatedAlerts.map((alertId) => (
                                 <Badge key={alertId} variant="outline" className="text-[10px] font-mono text-foreground border-border">
@@ -259,11 +261,11 @@ export default function RecommendationsPage() {
                           {action.status !== "completed" && (
                             <div className="flex items-center gap-2 pt-1">
                               <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
-                                <span>Start Implementation</span>
+                                <span>{tr("startImplementation")}</span>
                                 <ArrowRight className="ml-1.5 h-3 w-3" />
                               </Button>
                               <Button size="sm" variant="outline" className="text-foreground border-border bg-transparent">
-                                Create Ticket
+                                {tr("createTicket")}
                               </Button>
                             </div>
                           )}
@@ -277,7 +279,7 @@ export default function RecommendationsPage() {
             {!isLoading && actions.length === 0 && (
               <Card className="bg-card border-border">
                 <CardContent className="p-4 text-xs text-muted-foreground">
-                  No recommendations available.
+                  {tr("noRecommendations")}
                 </CardContent>
               </Card>
             )}

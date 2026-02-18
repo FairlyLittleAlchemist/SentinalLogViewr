@@ -4,19 +4,41 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ChevronLeft, ChevronRight, LogOut, Shield } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { navItems } from "@/lib/navigation"
+import { navItems, playbooksNavItem } from "@/lib/navigation"
 import { useAuth } from "@/components/auth/auth-provider"
-import { roleLabels } from "@/lib/auth/roles"
+import { EXPERIMENTAL_PLAYBOOKS_FLAG } from "@/lib/feature-flags"
+import { useTranslations } from "next-intl"
 
 export function AppSidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
+  const [playbooksEnabled, setPlaybooksEnabled] = useState(false)
   const { user, profile, role, loading, signOut } = useAuth()
+  const t = useTranslations()
 
-  const visibleNavItems = navItems.filter((item) => item.roles.includes(role))
+  useEffect(() => {
+    let active = true
+    const loadFlags = async () => {
+      const res = await fetch("/api/feature-flags", { cache: "no-store" }).catch(() => null)
+      if (!active || !res?.ok) return
+      const payload = await res.json().catch(() => null) as { flags?: Array<{ key: string; enabled: boolean }> } | null
+      const enabled = Boolean(payload?.flags?.some((flag) => flag.key === EXPERIMENTAL_PLAYBOOKS_FLAG && flag.enabled))
+      setPlaybooksEnabled(enabled)
+    }
+    void loadFlags()
+    return () => { active = false }
+  }, [])
+
+  const visibleNavItems = useMemo(() => {
+    const items = navItems.slice()
+    if (playbooksEnabled) {
+      items.splice(5, 0, playbooksNavItem)
+    }
+    return items.filter((item) => item.roles.includes(role))
+  }, [playbooksEnabled, role])
   const displayName = profile?.full_name || user?.email || "User"
   const initials = displayName
     .split(" ")
@@ -38,8 +60,8 @@ export function AppSidebar() {
         </div>
         {!collapsed && (
           <div className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">Sentinel Command</span>
-            <span className="text-xs text-muted-foreground">Azure SIEM</span>
+            <span className="text-sm font-semibold text-foreground">{t("app.name")}</span>
+            <span className="text-xs text-muted-foreground">{t("app.subtitle")}</span>
           </div>
         )}
       </div>
@@ -47,7 +69,7 @@ export function AppSidebar() {
       <nav className="flex-1 px-2 py-4">
         {!collapsed && (
           <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
-            Navigation
+            {t("common.navigation")}
           </div>
         )}
         <div className="space-y-1.5">
@@ -67,7 +89,7 @@ export function AppSidebar() {
                 <item.icon className="h-4 w-4 shrink-0" />
                 {!collapsed && (
                   <>
-                    <span className="flex-1">{item.label}</span>
+                    <span className="flex-1">{t(`nav.${item.labelKey}`)}</span>
                     {item.badge && (
                       <Badge
                         className={cn(
@@ -112,7 +134,7 @@ export function AppSidebar() {
             <div className="min-w-0 flex flex-col">
               <span className="truncate text-xs font-medium text-foreground">{displayName}</span>
               <span className="truncate text-[10px] text-muted-foreground">{user?.email ?? "-"}</span>
-              <span className="text-[10px] text-muted-foreground">{roleLabels[role]}</span>
+              <span className="text-[10px] text-muted-foreground">{t(`roles.${role}`)}</span>
             </div>
           </div>
           <Button
@@ -122,7 +144,7 @@ export function AppSidebar() {
             onClick={() => void signOut()}
           >
             <LogOut className="mr-2 h-3.5 w-3.5" />
-            Sign out
+            {t("common.signOut")}
           </Button>
         </div>
       )}

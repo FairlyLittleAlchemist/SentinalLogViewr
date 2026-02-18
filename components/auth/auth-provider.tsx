@@ -57,9 +57,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
+    const withTimeout = async <T,>(promise: Promise<T>, timeoutMs = 2500) => {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error("timeout")), timeoutMs)),
+      ])
+    }
+
     try {
-      await supabase.auth.signOut()
-      await fetch("/api/auth/signout", { method: "POST" })
+      // Clear local client session first to avoid hangs when auth network is flaky.
+      await withTimeout(supabase.auth.signOut({ scope: "local" }))
+      await withTimeout(fetch("/api/auth/signout", { method: "POST", keepalive: true }))
     } finally {
       setUser(null)
       setProfile(null)

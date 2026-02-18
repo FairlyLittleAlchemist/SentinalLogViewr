@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { getCurrentUserAndRole, hasPermission } from "@/lib/auth/server-role"
 
 export const dynamic = "force-dynamic"
 
@@ -20,12 +21,13 @@ export async function GET(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "boards.read"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "boards.read" }, { status: 403 })
   }
 
   const { data: board, error: boardError } = await supabase
@@ -60,6 +62,8 @@ export async function GET(
       ownerId: board.owner_id,
       caseId: board.case_id,
       isShared: board.is_shared,
+      boardType: board.board_type,
+      parentBoardId: board.parent_board_id,
       viewport: board.viewport,
       createdAt: board.created_at,
       updatedAt: board.updated_at,
@@ -97,12 +101,13 @@ export async function PATCH(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "boards.edit"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "boards.edit" }, { status: 403 })
   }
 
   let payload: unknown
@@ -140,6 +145,8 @@ export async function PATCH(
       ownerId: data.owner_id,
       caseId: data.case_id,
       isShared: data.is_shared,
+      boardType: data.board_type,
+      parentBoardId: data.parent_board_id,
       viewport: data.viewport,
       createdAt: data.created_at,
       updatedAt: data.updated_at,
@@ -153,12 +160,13 @@ export async function DELETE(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "boards.delete"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "boards.delete" }, { status: 403 })
   }
 
   const { error } = await supabase

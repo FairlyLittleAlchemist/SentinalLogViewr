@@ -10,6 +10,7 @@ This index maps each major file area to purpose.
 - `app/recommendations/page.tsx` - recommendation management
 - `app/cases/page.tsx` - case list
 - `app/cases/[id]/page.tsx` - case workspace
+- `app/playbooks/page.tsx` - playbook library/editor (experimental)
 - `app/board/page.tsx` - visual investigation board
 - `app/chatbot/page.tsx` - chat assistant UI
 - `app/account/page.tsx` - profile/security settings
@@ -47,6 +48,8 @@ This index maps each major file area to purpose.
 - `app/api/cases/[id]/timeline/route.ts`
 - `app/api/cases/[id]/timeline/[eventId]/route.ts`
 - `app/api/cases/[id]/graph/route.ts`
+- `app/api/cases/[id]/playbook/route.ts`
+- `app/api/cases/[id]/playbook/steps/[stepStatusId]/route.ts`
 
 ### Boards
 - `app/api/boards/route.ts`
@@ -55,6 +58,12 @@ This index maps each major file area to purpose.
 
 ### Other
 - `app/api/dashboard/route.ts`
+- `app/api/metrics/soc/route.ts`
+- `app/api/feature-flags/route.ts`
+- `app/api/playbooks/route.ts`
+- `app/api/playbooks/[id]/route.ts`
+- `app/api/playbooks/[id]/approve/route.ts`
+- `app/api/playbooks/[id]/rollback/route.ts`
 - `app/api/recommendations/route.ts`
 - `app/api/recommendations/[id]/route.ts`
 - `app/api/saved-views/route.ts`
@@ -68,10 +77,12 @@ This index maps each major file area to purpose.
 - `lib/supabase/server.ts` - server Supabase client
 - `lib/auth/roles.ts` - RBAC role definitions
 - `lib/auth/types.ts` - auth/profile types
+- `lib/auth/server-role.ts` - server-side user role lookup helpers
 - `lib/alerts/normalization.ts` - alert normalization helpers
 - `lib/parsing/event-payload.ts` - payload parsing + extracted fields
 - `lib/cases/playbooks.ts` - playbook templates
 - `lib/cases/sla.ts` - SLA and escalation calculations
+- `lib/feature-flags.ts` - feature-flag keys and helpers
 - `lib/navigation.ts` - menu model + role visibility
 - `lib/utils.ts` - utility helpers
 - `lib/data-store.ts` - data access helper layer

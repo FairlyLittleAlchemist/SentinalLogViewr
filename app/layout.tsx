@@ -1,6 +1,8 @@
 import React from "react"
 import type { Metadata, Viewport } from 'next'
 import { DM_Sans, DM_Mono } from 'next/font/google'
+import { getLocale, getMessages } from "next-intl/server"
+import { NextIntlClientProvider } from "next-intl"
 
 import './globals.css'
 import { AuthProvider } from '@/components/auth/auth-provider'
@@ -23,17 +25,40 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
+  const localePromise = getLocale()
+  const messagesPromise = getMessages()
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <LayoutWithIntl localePromise={localePromise} messagesPromise={messagesPromise}>
+      {children}
+    </LayoutWithIntl>
+  )
+}
+
+async function LayoutWithIntl({
+  children,
+  localePromise,
+  messagesPromise,
+}: {
+  children: React.ReactNode
+  localePromise: ReturnType<typeof getLocale>
+  messagesPromise: ReturnType<typeof getMessages>
+}) {
+  const [locale, messages] = await Promise.all([localePromise, messagesPromise])
+
+  return (
+    <html lang={locale} suppressHydrationWarning>
       <body className={`${dmSans.variable} ${dmMono.variable} font-sans antialiased`}>
-        <ThemeProvider
-          attribute="class"
-          defaultTheme="theme-emerald"
-          enableSystem={false}
-          themes={["theme-emerald", "theme-forest", "theme-sand", "theme-ocean", "theme-amber", "dark"]}
-        >
-          <AuthProvider>{children}</AuthProvider>
-        </ThemeProvider>
+        <NextIntlClientProvider locale={locale} messages={messages}>
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="theme-emerald"
+            enableSystem={false}
+            themes={["theme-emerald", "theme-forest", "theme-sand", "theme-ocean", "theme-amber", "dark"]}
+          >
+            <AuthProvider>{children}</AuthProvider>
+          </ThemeProvider>
+        </NextIntlClientProvider>
       </body>
     </html>
   )

@@ -17,7 +17,6 @@ import { cn } from "@/lib/utils"
 import { Shield } from "lucide-react"
 import { navItems } from "@/lib/navigation"
 import { useAuth } from "@/components/auth/auth-provider"
-import { roleLabels } from "@/lib/auth/roles"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -28,10 +27,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { ThemeSwitcher } from "@/components/theme-switcher"
+import { LocaleSwitcher } from "@/components/locale-switcher"
+import { useTranslations } from "next-intl"
 
 export function AppHeader({ title }: { title: string }) {
   const pathname = usePathname()
   const { user, profile, role, loading, signOut } = useAuth()
+  const t = useTranslations()
 
   const visibleNavItems = navItems.filter((item) => item.roles.includes(role))
   const displayName = profile?.full_name || user?.email || "User"
@@ -49,7 +51,7 @@ export function AppHeader({ title }: { title: string }) {
           <SheetTrigger asChild>
             <Button variant="ghost" size="icon" className="hover-glow lg:hidden text-muted-foreground">
               <Menu className="h-5 w-5" />
-              <span className="sr-only">Open menu</span>
+              <span className="sr-only">{t("common.navigation")}</span>
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="w-64 bg-sidebar p-0">
@@ -58,7 +60,7 @@ export function AppHeader({ title }: { title: string }) {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                   <Shield className="h-4 w-4 text-primary-foreground" />
                 </div>
-                <SheetTitle className="text-sm font-semibold text-foreground">Sentinel Command</SheetTitle>
+                <SheetTitle className="text-sm font-semibold text-foreground">{t("app.name")}</SheetTitle>
               </div>
             </SheetHeader>
             <nav className="space-y-1 px-2 py-4">
@@ -76,7 +78,7 @@ export function AppHeader({ title }: { title: string }) {
                     )}
                   >
                     <item.icon className="h-4 w-4" />
-                    <span className="flex-1">{item.label}</span>
+                    <span className="flex-1">{t(`nav.${item.labelKey}`)}</span>
                     {item.badge && (
                       <Badge className="h-5 min-w-5 justify-center bg-destructive px-1.5 text-[10px] text-destructive-foreground">
                         {item.badge}
@@ -92,19 +94,20 @@ export function AppHeader({ title }: { title: string }) {
       </div>
       <div className="flex items-center gap-2">
         <div className="relative hidden md:block">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Search logs, alerts..."
+            <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+            placeholder={t("common.searchPlaceholder")}
             className="h-8 w-64 bg-secondary pl-8 text-sm text-foreground placeholder:text-muted-foreground transition-all duration-300 focus-visible:ring-primary/40"
           />
         </div>
+        <LocaleSwitcher />
         <ThemeSwitcher />
         <Button variant="ghost" size="icon" className="hover-glow relative text-muted-foreground">
           <Bell className="h-4 w-4" />
           <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[9px] font-bold text-destructive-foreground">
             3
           </span>
-          <span className="sr-only">Notifications</span>
+          <span className="sr-only">{t("common.notifications")}</span>
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -118,21 +121,21 @@ export function AppHeader({ title }: { title: string }) {
                   </AvatarFallback>
                 </Avatar>
               )}
-              <span className="sr-only">Open user menu</span>
+              <span className="sr-only">{t("common.accountSettings")}</span>
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56 bg-card text-foreground border-border">
             <DropdownMenuLabel className="flex flex-col gap-1">
               <span className="text-xs font-semibold">{displayName}</span>
-              <span className="text-[10px] text-muted-foreground">{roleLabels[role]}</span>
+              <span className="text-[10px] text-muted-foreground">{t(`roles.${role}`)}</span>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/account">Account settings</Link>
+              <Link href="/account">{t("common.accountSettings")}</Link>
             </DropdownMenuItem>
             {role === "admin" && (
               <DropdownMenuItem asChild>
-                <Link href="/admin">Admin dashboard</Link>
+                <Link href="/admin">{t("common.adminDashboard")}</Link>
               </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
@@ -142,7 +145,7 @@ export function AppHeader({ title }: { title: string }) {
                 void signOut()
               }}
             >
-              Sign out
+              {t("common.signOut")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

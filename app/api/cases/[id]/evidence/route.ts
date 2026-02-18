@@ -9,6 +9,10 @@ const createEvidenceSchema = z.object({
   evidenceType: z.enum(["link", "file", "hash", "ioc", "note"]).optional().default("link"),
   url: z.string().url().optional().nullable(),
   details: z.string().max(5000).optional().nullable(),
+  filePath: z.string().max(500).optional().nullable(),
+  fileSizeBytes: z.number().int().positive().optional().nullable(),
+  contentType: z.string().max(120).optional().nullable(),
+  sha256: z.string().regex(/^[a-fA-F0-9]{64}$/).optional().nullable(),
 })
 
 export async function POST(
@@ -45,6 +49,10 @@ export async function POST(
       evidence_type: parsed.data.evidenceType,
       url: parsed.data.url ?? null,
       details: parsed.data.details ?? null,
+      file_path: parsed.data.filePath ?? null,
+      file_size_bytes: parsed.data.fileSizeBytes ?? null,
+      content_type: parsed.data.contentType ?? null,
+      sha256: parsed.data.sha256 ? parsed.data.sha256.toLowerCase() : null,
       created_by: user.id,
     })
     .select("*")
@@ -72,6 +80,10 @@ export async function POST(
       evidenceType: evidence.evidence_type,
       url: evidence.url,
       details: evidence.details,
+      filePath: evidence.file_path,
+      fileSizeBytes: evidence.file_size_bytes,
+      contentType: evidence.content_type,
+      sha256: evidence.sha256,
       createdAt: evidence.created_at,
       createdBy: evidence.created_by,
     },

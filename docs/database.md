@@ -32,6 +32,15 @@
 - `alert_case_hypotheses`: hypothesis tracking (statement/confidence/status).
 - `alert_case_response_actions`: containment and response actions.
 - `alert_case_timeline_events`: investigation timeline checkpoints.
+- `case_playbook_executions`: bound playbook template/version and strict-mode execution state per case.
+- `case_playbook_step_status`: status progression for each playbook step in a case execution.
+
+### Playbooks and feature flags
+
+- `feature_flags`: admin-managed experimental flags (e.g. `experimental_playbooks`).
+- `playbook_templates`: runbook template metadata and active/current version pointer.
+- `playbook_template_versions`: version history (`draft|approved|archived`) with approval metadata.
+- `playbook_template_steps`: ordered stage-tagged steps for each version.
 
 ### Investigation board
 
@@ -67,6 +76,11 @@
 - `alert_case_hypotheses.case_id -> alert_cases.id`
 - `alert_case_response_actions.case_id -> alert_cases.id`
 - `alert_case_timeline_events.case_id -> alert_cases.id`
+- `case_playbook_executions.case_id -> alert_cases.id`
+- `case_playbook_executions.template_id -> playbook_templates.id`
+- `case_playbook_executions.version_id -> playbook_template_versions.id`
+- `case_playbook_step_status.execution_id -> case_playbook_executions.id`
+- `case_playbook_step_status.step_id -> playbook_template_steps.id`
 - `alert_overrides.alert_id -> alerts.id`
 - `investigation_boards.case_id -> alert_cases.id`
 - `investigation_board_nodes.board_id -> investigation_boards.id`
@@ -95,6 +109,7 @@
 - `20260215193000_case_alert_links.sql`
 - `20260215195500_case_log_links.sql`
 - `20260216193000_case_workflow_refinement.sql`
+- `20260216230000_playbooks_feature_flags_and_execution.sql`
 
 ## Full schema export command
 

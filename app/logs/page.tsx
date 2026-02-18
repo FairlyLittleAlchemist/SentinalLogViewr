@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AppHeader } from "@/components/app-header"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { useLocale, useTranslations } from "next-intl"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -36,9 +37,9 @@ const severityStyles: Record<string, string> = {
   informational: "bg-muted text-muted-foreground border-border",
 }
 
-function formatTimestamp(timestamp: string) {
+function formatTimestamp(timestamp: string, locale: string) {
   const date = new Date(timestamp)
-  return date.toLocaleString("en-US", {
+  return date.toLocaleString(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
@@ -48,16 +49,19 @@ function formatTimestamp(timestamp: string) {
   })
 }
 
-function formatLogPreview(log: LogEntry) {
+function formatLogPreview(log: LogEntry, fallbackEmpty: string, fallbackPayload: string) {
   const preferred = log.summary?.trim() ?? ""
   if (preferred) return preferred
   const trimmed = log.message?.trim() ?? ""
-  if (!trimmed) return "No message provided."
+  if (!trimmed) return fallbackEmpty
   return summarizeEventData(trimmed, { maxItems: 3, maxValueLength: 64 })
-    ?? "Event payload attached. Expand to view."
+    ?? fallbackPayload
 }
 
 export default function LogsPage() {
+  const t = useTranslations("pages")
+  const tl = useTranslations("logs")
+  const locale = useLocale()
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [search, setSearch] = useState("")
   const [severityFilter, setSeverityFilter] = useState<string>("all")
@@ -79,7 +83,7 @@ export default function LogsPage() {
         setIsLoading(true)
         const response = await fetch(`/api/logs?page=${page}&pageSize=${pageSize}`, { signal: controller.signal })
         if (!response.ok) {
-          throw new Error(`Failed to load logs (${response.status})`)
+          throw new Error(tl("errors.loadWithStatus", { status: response.status }))
         }
         const payload = (await response.json()) as { logs: LogEntry[]; total: number }
         setLogs(payload.logs)
@@ -87,7 +91,7 @@ export default function LogsPage() {
         setLoadError(null)
       } catch (error) {
         if (!controller.signal.aborted) {
-          setLoadError(error instanceof Error ? error.message : "Failed to load logs")
+          setLoadError(error instanceof Error ? error.message : tl("errors.load"))
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -99,7 +103,7 @@ export default function LogsPage() {
     loadLogs()
 
     return () => controller.abort()
-  }, [page])
+  }, [page, tl])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -164,13 +168,13 @@ export default function LogsPage() {
 
   return (
     <DashboardLayout>
-      <AppHeader title="Log Viewer" />
+      <AppHeader title={t("logs")} />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-6 p-4 lg:p-6">
           <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-foreground">Log Viewer</h2>
+            <h2 className="text-lg font-semibold text-foreground">{t("logs")}</h2>
             <p className="text-sm text-muted-foreground">
-              Browse and analyze security logs from Azure Sentinel data connectors.
+              {tl("subtitle")}
             </p>
           </div>
 
@@ -179,7 +183,7 @@ export default function LogsPage() {
             <div className="relative flex-1">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
-                placeholder="Search logs by message, user, IP address..."
+                placeholder={tl("searchPlaceholder")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-9 bg-secondary pl-8 text-sm text-foreground font-mono placeholder:text-muted-foreground placeholder:font-sans"
@@ -189,23 +193,23 @@ export default function LogsPage() {
               <Filter className="h-4 w-4 text-muted-foreground" />
               <Select value={severityFilter} onValueChange={setSeverityFilter}>
                 <SelectTrigger className="h-9 w-32 bg-secondary text-sm text-foreground">
-                  <SelectValue placeholder="Severity" />
+                  <SelectValue placeholder={tl("filters.severity")} />
                 </SelectTrigger>
                 <SelectContent className="bg-card text-foreground">
-                  <SelectItem value="all">All Severity</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                  <SelectItem value="informational">Info</SelectItem>
+                  <SelectItem value="all">{tl("filters.allSeverity")}</SelectItem>
+                  <SelectItem value="critical">{tl("severity.critical")}</SelectItem>
+                  <SelectItem value="high">{tl("severity.high")}</SelectItem>
+                  <SelectItem value="medium">{tl("severity.medium")}</SelectItem>
+                  <SelectItem value="low">{tl("severity.low")}</SelectItem>
+                  <SelectItem value="informational">{tl("severity.informational")}</SelectItem>
                 </SelectContent>
               </Select>
               <Select value={sourceFilter} onValueChange={setSourceFilter}>
                 <SelectTrigger className="h-9 w-40 bg-secondary text-sm text-foreground">
-                  <SelectValue placeholder="Source" />
+                  <SelectValue placeholder={tl("filters.source")} />
                 </SelectTrigger>
                 <SelectContent className="bg-card text-foreground">
-                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="all">{tl("filters.allSources")}</SelectItem>
                   {sources.map((source) => (
                     <SelectItem key={source} value={source}>{source}</SelectItem>
                   ))}
@@ -213,22 +217,22 @@ export default function LogsPage() {
               </Select>
               <Select value={noisyFilter} onValueChange={setNoisyFilter}>
                 <SelectTrigger className="h-9 w-36 bg-secondary text-sm text-foreground">
-                  <SelectValue placeholder="Noisiest" />
+                  <SelectValue placeholder={tl("filters.noisiest")} />
                 </SelectTrigger>
                 <SelectContent className="bg-card text-foreground">
-                  <SelectItem value="all">All Sources</SelectItem>
-                  <SelectItem value="top5">Top 5 Sources</SelectItem>
-                  <SelectItem value="top10">Top 10 Sources</SelectItem>
-                  <SelectItem value="top20">Top 20 Sources</SelectItem>
+                  <SelectItem value="all">{tl("filters.allSources")}</SelectItem>
+                  <SelectItem value="top5">{tl("filters.topSources", { count: 5 })}</SelectItem>
+                  <SelectItem value="top10">{tl("filters.topSources", { count: 10 })}</SelectItem>
+                  <SelectItem value="top20">{tl("filters.topSources", { count: 20 })}</SelectItem>
                 </SelectContent>
               </Select>
               <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground border-border bg-transparent">
                 <RefreshCw className="h-4 w-4" />
-                <span className="sr-only">Refresh logs</span>
+                <span className="sr-only">{tl("actions.refresh")}</span>
               </Button>
               <Button variant="outline" size="icon" className="h-9 w-9 text-muted-foreground border-border bg-transparent">
                 <Download className="h-4 w-4" />
-                <span className="sr-only">Export logs</span>
+                <span className="sr-only">{tl("actions.export")}</span>
               </Button>
             </div>
           </div>
@@ -236,10 +240,10 @@ export default function LogsPage() {
           {/* Log count */}
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted-foreground">
-              Showing {filteredLogs.length} of {totalLogs} log entries
+              {tl("showingEntries", { shown: filteredLogs.length, total: totalLogs })}
             </span>
             <span className="text-xs text-muted-foreground">
-              Page {page} of {totalPages}
+              {tl("pageOf", { page, total: totalPages })}
             </span>
           </div>
 
@@ -251,31 +255,31 @@ export default function LogsPage() {
                   {loadError}
                 </div>
               )}
-              {isLoading && (
+                  {isLoading && (
                 <div className="border-b border-border px-4 py-3 text-xs text-muted-foreground">
-                  Loading logs...
+                  {tl("loading")}
                 </div>
               )}
               <Table>
                 <TableHeader>
                   <TableRow className="border-border hover:bg-transparent">
                     <TableHead className="w-[160px] text-muted-foreground text-[11px] uppercase tracking-wide">
-                      Timestamp
+                      {tl("columns.timestamp")}
                     </TableHead>
                     <TableHead className="w-[90px] text-muted-foreground text-[11px] uppercase tracking-wide">
-                      Severity
+                      {tl("columns.severity")}
                     </TableHead>
                     <TableHead className="w-[160px] text-muted-foreground text-[11px] uppercase tracking-wide">
-                      Source
+                      {tl("columns.source")}
                     </TableHead>
                     <TableHead className="text-muted-foreground text-[11px] uppercase tracking-wide">
-                      Message
+                      {tl("columns.message")}
                     </TableHead>
                     <TableHead className="w-[140px] text-muted-foreground text-[11px] uppercase tracking-wide">
-                      IP Address
+                      {tl("columns.ipAddress")}
                     </TableHead>
                     <TableHead className="w-[180px] text-muted-foreground text-[11px] uppercase tracking-wide">
-                      User
+                      {tl("columns.user")}
                     </TableHead>
                   </TableRow>
                 </TableHeader>
@@ -306,18 +310,18 @@ export default function LogsPage() {
                           onClick={() => setExpandedLog(isExpanded ? null : log.id)}
                         >
                           <TableCell className="py-3 pr-2 font-mono text-[11px] text-muted-foreground">
-                            {formatTimestamp(log.timestamp)}
+                            {formatTimestamp(log.timestamp, locale)}
                           </TableCell>
                           <TableCell className="py-3 pr-2">
                             <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[log.severity])}>
-                              {log.severity}
+                              {tl(`severity.${log.severity}`)}
                             </Badge>
                           </TableCell>
                           <TableCell className="py-3 pr-4 text-xs text-foreground leading-relaxed break-words">
                             {log.source}
                           </TableCell>
                           <TableCell className="py-3 pr-4 text-xs text-foreground leading-relaxed break-words line-clamp-2">
-                            {formatLogPreview(log)}
+                            {formatLogPreview(log, tl("noMessage"), tl("payloadAttached"))}
                           </TableCell>
                           <TableCell className="py-3 pr-2 font-mono text-[11px] text-muted-foreground">
                             {log.ipAddress}
@@ -332,23 +336,23 @@ export default function LogsPage() {
                               <div className="flex flex-col gap-3">
                                 <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                                   <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                    <div className="text-[10px] uppercase text-muted-foreground">Actor</div>
-                                    <div className="text-xs text-foreground break-words">{log.actor || log.user || "Unknown"}</div>
+                                    <div className="text-[10px] uppercase text-muted-foreground">{tl("detail.actor")}</div>
+                                    <div className="text-xs text-foreground break-words">{log.actor || log.user || tl("unknown")}</div>
                                   </div>
                                   <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                    <div className="text-[10px] uppercase text-muted-foreground">IP Address</div>
-                                    <div className="text-xs text-foreground break-words">{log.ipAddress || "Unknown"}</div>
+                                    <div className="text-[10px] uppercase text-muted-foreground">{tl("columns.ipAddress")}</div>
+                                    <div className="text-xs text-foreground break-words">{log.ipAddress || tl("unknown")}</div>
                                   </div>
                                   <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                    <div className="text-[10px] uppercase text-muted-foreground">Resource</div>
-                                    <div className="text-xs text-foreground break-words">{log.resource || "Unknown"}</div>
+                                    <div className="text-[10px] uppercase text-muted-foreground">{tl("detail.resource")}</div>
+                                    <div className="text-xs text-foreground break-words">{log.resource || tl("unknown")}</div>
                                   </div>
                                   <div className="rounded-lg border border-border bg-card px-3 py-2">
-                                    <div className="text-[10px] uppercase text-muted-foreground">Status</div>
+                                    <div className="text-[10px] uppercase text-muted-foreground">{tl("detail.status")}</div>
                                     <div className="text-xs text-foreground break-words">{log.status}</div>
                                   </div>
                                 </div>
-                                <div className="text-xs text-muted-foreground">Event Data</div>
+                                <div className="text-xs text-muted-foreground">{tl("detail.eventData")}</div>
                                 {parsedEntries.length > 0 && (
                                   <div className="grid grid-cols-1 gap-2 md:grid-cols-2 lg:grid-cols-3">
                                     {parsedEntries.map((field) => (
@@ -361,7 +365,7 @@ export default function LogsPage() {
                                 )}
                                 <details className="rounded-lg border border-border bg-card px-3 py-2">
                                   <summary className="cursor-pointer text-[11px] text-muted-foreground">
-                                    Raw payload
+                                    {tl("detail.rawPayload")}
                                   </summary>
                                   <div className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap font-mono text-[11px] text-muted-foreground">
                                     {rawPayload}
@@ -378,7 +382,7 @@ export default function LogsPage() {
               </Table>
               {!isLoading && filteredLogs.length === 0 && (
                 <div className="flex flex-col items-center justify-center p-12">
-                  <p className="text-sm text-muted-foreground">No logs match your filters.</p>
+                  <p className="text-sm text-muted-foreground">{tl("emptyFiltered")}</p>
                 </div>
               )}
             </CardContent>
@@ -391,10 +395,10 @@ export default function LogsPage() {
               onClick={() => setPage((current) => Math.max(current - 1, 1))}
               disabled={page <= 1}
             >
-              Previous
+              {tl("pagination.previous")}
             </Button>
             <span className="text-xs text-muted-foreground">
-              Showing {pageSize} per page
+              {tl("pagination.perPage", { count: pageSize })}
             </span>
             <Button
               variant="outline"
@@ -403,7 +407,7 @@ export default function LogsPage() {
               onClick={() => setPage((current) => Math.min(current + 1, totalPages))}
               disabled={page >= totalPages}
             >
-              Next
+              {tl("pagination.next")}
             </Button>
           </div>
         </div>

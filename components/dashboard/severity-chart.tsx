@@ -3,18 +3,20 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import type { SeverityDistributionEntry } from "@/lib/mock-data"
+import { useTranslations } from "next-intl"
 
 interface SeverityChartProps {
   distribution: SeverityDistributionEntry[]
 }
 
 export function SeverityChart({ distribution }: SeverityChartProps) {
+  const t = useTranslations("dashboard")
   const total = distribution.reduce((sum, item) => sum + item.value, 0)
 
   return (
     <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-foreground">Severity Distribution</CardTitle>
+        <CardTitle className="text-sm font-semibold text-foreground">{t("severityDistribution")}</CardTitle>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex items-center gap-6">

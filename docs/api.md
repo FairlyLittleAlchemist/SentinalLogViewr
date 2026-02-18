@@ -69,6 +69,7 @@
 - `POST /api/cases/:id/tasks`
 - `PATCH /api/cases/:id/tasks/:taskId`
 - `POST /api/cases/:id/evidence`
+  - Supports metadata fields for chain-of-custody: `filePath`, `fileSizeBytes`, `contentType`, `sha256`.
 
 ### Case workflow entities
 
@@ -95,6 +96,41 @@
 
 - `GET /api/cases/:id/graph`
   - Returns board-ready node/edge graph from linked alerts/logs.
+
+### Case playbook execution
+
+- `GET /api/cases/:id/playbook`
+  - Returns bound playbook execution, per-step state, and stage progress.
+- `POST /api/cases/:id/playbook`
+  - `{ action: "bind", templateId? }` binds or rebinds playbook to case.
+  - `{ action: "reseed" }` seeds missing case tasks from playbook steps.
+- `PATCH /api/cases/:id/playbook/steps/:stepStatusId`
+  - Updates step status/notes (`pending|in_progress|completed|skipped|blocked`).
+
+## Playbooks
+
+- `GET /api/playbooks`
+  - Lists playbook templates, current version, and current steps.
+- `POST /api/playbooks`
+  - Creates template + approved v1 steps.
+- `GET /api/playbooks/:id`
+  - Returns template with full version history and step sets.
+- `PATCH /api/playbooks/:id`
+  - Updates metadata; when `steps` is provided creates a new draft/approved version.
+- `DELETE /api/playbooks/:id`
+  - Deletes template when unused, otherwise deactivates it.
+- `POST /api/playbooks/:id/approve`
+  - Approves a version and promotes it as current.
+- `POST /api/playbooks/:id/rollback`
+  - Sets current version to a previous approved version.
+
+## Feature Flags and SOC Metrics
+
+- `GET /api/feature-flags`
+- `PATCH /api/feature-flags`
+  - Admin-only flag updates (`experimental_playbooks`).
+- `GET /api/metrics/soc`
+  - MTTA/MTTR/reopen rate/false-positive rate/SLA breach trend/workload.
 
 ## Boards
 

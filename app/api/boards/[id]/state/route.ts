@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { z } from "zod"
 import { createClient } from "@/lib/supabase/server"
+import { getCurrentUserAndRole, hasPermission } from "@/lib/auth/server-role"
 
 export const dynamic = "force-dynamic"
 
@@ -55,12 +56,13 @@ export async function PUT(
 ) {
   const { id } = await params
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+  const { user, role } = await getCurrentUserAndRole(supabase)
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+  if (!(await hasPermission(supabase, user, role, "boards.edit"))) {
+    return NextResponse.json({ error: "Forbidden", requiredPermission: "boards.edit" }, { status: 403 })
   }
 
   let payload: unknown

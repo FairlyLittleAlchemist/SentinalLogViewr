@@ -12,31 +12,34 @@ import {
   Legend,
 } from "recharts"
 import type { TimeSeriesPoint } from "@/lib/mock-data"
+import { useLocale, useTranslations } from "next-intl"
 
 interface AlertsChartProps {
   series: TimeSeriesPoint[]
 }
 
 export function AlertsChart({ series }: AlertsChartProps) {
+  const t = useTranslations("dashboard")
+  const locale = useLocale()
   const formatHour = (value: string) => {
     if (!value) return ""
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return value
-    return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+    return date.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", hour12: false })
   }
 
   const formatTooltipLabel = (value: string) => {
     const date = new Date(value)
     if (Number.isNaN(date.getTime())) return value
-    return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
+    return date.toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
   }
 
   return (
     <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-foreground">Alert Trend (24h)</CardTitle>
-          <span className="text-xs text-muted-foreground">Last 24 hours (data)</span>
+          <CardTitle className="text-sm font-semibold text-foreground">{t("alertTrend")}</CardTitle>
+          <span className="text-xs text-muted-foreground">{t("last24h")}</span>
         </div>
       </CardHeader>
       <CardContent className="p-4 pt-0">

@@ -3,6 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { AttackSource } from "@/lib/mock-data"
 import { Progress } from "@/components/ui/progress"
+import { useLocale, useTranslations } from "next-intl"
 
 interface AttackSourcesProps {
   sources: AttackSource[]
@@ -24,20 +25,18 @@ function formatSourceLabel(raw: string) {
   return { label: value, detail: "" }
 }
 
-function formatCount(value: number) {
-  return value.toLocaleString("en-US")
-}
-
 export function AttackSources({ sources }: AttackSourcesProps) {
+  const t = useTranslations("dashboard")
+  const locale = useLocale()
   if (!sources.length) {
     return (
       <Card className="interactive-surface hover-lift border-border bg-card">
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold text-foreground">Top Attack Origins</CardTitle>
+          <CardTitle className="text-sm font-semibold text-foreground">{t("topAttackOrigins")}</CardTitle>
         </CardHeader>
         <CardContent className="p-4 pt-0">
           <div className="rounded-lg border border-border bg-secondary/40 px-4 py-3 text-xs text-muted-foreground">
-            No attack source data available.
+            {t("noAttackSourceData")}
           </div>
         </CardContent>
       </Card>
@@ -47,7 +46,7 @@ export function AttackSources({ sources }: AttackSourcesProps) {
   return (
     <Card className="interactive-surface hover-lift border-border bg-card">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-semibold text-foreground">Top Attack Origins</CardTitle>
+        <CardTitle className="text-sm font-semibold text-foreground">{t("topAttackOrigins")}</CardTitle>
       </CardHeader>
       <CardContent className="p-4 pt-0">
         <div className="flex flex-col gap-4">
@@ -71,7 +70,7 @@ export function AttackSources({ sources }: AttackSourcesProps) {
                     )}
                   </div>
                   <span className="text-[11px] font-medium text-muted-foreground">
-                    {formatCount(source.count)} ({source.percentage}%)
+                    {source.count.toLocaleString(locale)} ({source.percentage}%)
                   </span>
                 </div>
                 <Progress value={source.percentage} className="h-1.5 bg-secondary/70" />

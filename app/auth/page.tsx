@@ -8,8 +8,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { useTranslations } from "next-intl"
 
 export default function AuthPage() {
+  const t = useTranslations("auth")
   const router = useRouter()
   const searchParams = useSearchParams()
   const supabase = useMemo(() => createClient(), [])
@@ -29,19 +31,19 @@ export default function AuthPage() {
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL
       return `Network/auth request failed. Check that Supabase is reachable and NEXT_PUBLIC_SUPABASE_URL is correct.${url ? ` (${url})` : ""}`
     }
-    return message || "Unknown authentication error."
+    return message || t("unknownAuthError")
   }
 
   useEffect(() => {
     const next = searchParams.get("next")
     const errorParam = searchParams.get("error")
     if (next) {
-      setMessage("Please sign in to continue.")
+      setMessage(t("pleaseSignIn"))
     }
     if (errorParam === "auth_service_unavailable") {
-      setError("Auth service is not reachable. Ensure Supabase local stack is running on http://127.0.0.1:54321.")
+      setError(t("authUnavailable"))
     }
-  }, [searchParams])
+  }, [searchParams, t])
 
   useEffect(() => {
     const checkSession = async () => {
@@ -105,7 +107,7 @@ export default function AuthPage() {
         if (data.session) {
           router.push("/")
         } else {
-          setMessage("Check your email to confirm your account before signing in.")
+          setMessage(t("confirmEmail"))
         }
       }
     } catch (exception) {
@@ -130,7 +132,7 @@ export default function AuthPage() {
       if (resetError) {
         setError(resetError.message)
       } else {
-        setMessage("Password reset email sent. Check your inbox.")
+        setMessage(t("resetEmailSent"))
       }
     } catch (exception) {
       setError(formatAuthException(exception))
@@ -145,9 +147,9 @@ export default function AuthPage() {
         <Card className="bg-card border-border shadow-lg">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <CardTitle className="text-lg text-foreground">Sentinel Command Access</CardTitle>
+              <CardTitle className="text-lg text-foreground">{t("accessTitle")}</CardTitle>
               <Badge className="bg-primary/15 text-primary border border-primary/30 text-[10px]">
-                Secure Login
+                {t("secureLogin")}
               </Badge>
             </div>
           </CardHeader>
@@ -165,26 +167,26 @@ export default function AuthPage() {
 
             <Tabs value={tab} onValueChange={setTab} className="w-full">
               <TabsList className="grid w-full grid-cols-3 bg-secondary/60">
-                <TabsTrigger value="sign-in">Sign in</TabsTrigger>
-                <TabsTrigger value="sign-up">Sign up</TabsTrigger>
-                <TabsTrigger value="reset">Reset</TabsTrigger>
+                <TabsTrigger value="sign-in">{t("signInTab")}</TabsTrigger>
+                <TabsTrigger value="sign-up">{t("signUpTab")}</TabsTrigger>
+                <TabsTrigger value="reset">{t("resetTab")}</TabsTrigger>
               </TabsList>
 
               <TabsContent value="sign-in">
                 <form className="space-y-3" onSubmit={handleSignIn}>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Email</label>
+                    <label className="text-xs text-muted-foreground">{t("email")}</label>
                     <Input
                       type="email"
                       required
-                      placeholder="you@company.com"
+                      placeholder={t("emailPlaceholder")}
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       className="bg-secondary"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Password</label>
+                    <label className="text-xs text-muted-foreground">{t("password")}</label>
                     <Input
                       type="password"
                       required
@@ -195,7 +197,7 @@ export default function AuthPage() {
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Signing in..." : "Sign in"}
+                    {loading ? t("signingIn") : t("signIn")}
                   </Button>
                 </form>
               </TabsContent>
@@ -203,42 +205,42 @@ export default function AuthPage() {
               <TabsContent value="sign-up">
                 <form className="space-y-3" onSubmit={handleSignUp}>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Full name</label>
+                    <label className="text-xs text-muted-foreground">{t("fullName")}</label>
                     <Input
                       type="text"
-                      placeholder="Alex Morgan"
+                      placeholder={t("fullNamePlaceholder")}
                       value={fullName}
                       onChange={(event) => setFullName(event.target.value)}
                       className="bg-secondary"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Email</label>
+                    <label className="text-xs text-muted-foreground">{t("email")}</label>
                     <Input
                       type="email"
                       required
-                      placeholder="you@company.com"
+                      placeholder={t("emailPlaceholder")}
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       className="bg-secondary"
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Password</label>
+                    <label className="text-xs text-muted-foreground">{t("password")}</label>
                     <Input
                       type="password"
                       required
-                      placeholder="Create a strong password"
+                      placeholder={t("createStrongPassword")}
                       value={password}
                       onChange={(event) => setPassword(event.target.value)}
                       className="bg-secondary"
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Creating account..." : "Create account"}
+                    {loading ? t("creatingAccount") : t("createAccount")}
                   </Button>
                   <p className="text-[10px] text-muted-foreground">
-                    New accounts start as Viewer. An admin can upgrade your role.
+                    {t("newAccountRoleHint")}
                   </p>
                 </form>
               </TabsContent>
@@ -246,18 +248,18 @@ export default function AuthPage() {
               <TabsContent value="reset">
                 <form className="space-y-3" onSubmit={handleReset}>
                   <div className="space-y-1">
-                    <label className="text-xs text-muted-foreground">Email</label>
+                    <label className="text-xs text-muted-foreground">{t("email")}</label>
                     <Input
                       type="email"
                       required
-                      placeholder="you@company.com"
+                      placeholder={t("emailPlaceholder")}
                       value={email}
                       onChange={(event) => setEmail(event.target.value)}
                       className="bg-secondary"
                     />
                   </div>
                   <Button type="submit" className="w-full" disabled={loading}>
-                    {loading ? "Sending..." : "Send reset link"}
+                    {loading ? t("sending") : t("sendResetLink")}
                   </Button>
                 </form>
               </TabsContent>

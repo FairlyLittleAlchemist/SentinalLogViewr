@@ -6,8 +6,10 @@ import { createClient } from "@/lib/supabase/client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { useTranslations } from "next-intl"
 
 export default function UpdatePasswordPage() {
+  const t = useTranslations("auth")
   const router = useRouter()
   const supabase = useMemo(() => createClient(), [])
 
@@ -24,7 +26,7 @@ export default function UpdatePasswordPage() {
       const url = process.env.NEXT_PUBLIC_SUPABASE_URL
       return `Network/auth request failed. Check that Supabase is reachable and NEXT_PUBLIC_SUPABASE_URL is correct.${url ? ` (${url})` : ""}`
     }
-    return message || "Unknown authentication error."
+    return message || t("unknownAuthError")
   }
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function UpdatePasswordPage() {
       try {
         const { data } = await supabase.auth.getSession()
         if (!data.session) {
-          setMessage("Use the password recovery link from your email to continue.")
+          setMessage(t("useRecoveryLink"))
         }
       } catch (exception) {
         setError(formatAuthException(exception))
@@ -48,12 +50,12 @@ export default function UpdatePasswordPage() {
     setMessage(null)
 
     if (password.length < 8) {
-      setError("Password must be at least 8 characters.")
+      setError(t("passwordLength"))
       return
     }
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match.")
+      setError(t("passwordMismatch"))
       return
     }
 
@@ -65,7 +67,7 @@ export default function UpdatePasswordPage() {
         return
       }
 
-      setMessage("Password updated. Redirecting to dashboard...")
+      setMessage(t("passwordUpdated"))
       setTimeout(() => router.push("/"), 1500)
     } catch (exception) {
       setError(formatAuthException(exception))
@@ -79,7 +81,7 @@ export default function UpdatePasswordPage() {
       <div className="w-full max-w-md">
         <Card className="bg-card border-border shadow-lg">
           <CardHeader>
-            <CardTitle className="text-lg text-foreground">Update your password</CardTitle>
+            <CardTitle className="text-lg text-foreground">{t("updatePasswordTitle")}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {message && (
@@ -94,29 +96,29 @@ export default function UpdatePasswordPage() {
             )}
             <form className="space-y-3" onSubmit={handleUpdate}>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">New password</label>
+                <label className="text-xs text-muted-foreground">{t("newPassword")}</label>
                 <Input
                   type="password"
                   required
-                  placeholder="Create a strong password"
+                  placeholder={t("createStrongPassword")}
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   className="bg-secondary"
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Confirm password</label>
+                <label className="text-xs text-muted-foreground">{t("confirmPassword")}</label>
                 <Input
                   type="password"
                   required
-                  placeholder="Repeat your password"
+                  placeholder={t("repeatPassword")}
                   value={confirmPassword}
                   onChange={(event) => setConfirmPassword(event.target.value)}
                   className="bg-secondary"
                 />
               </div>
               <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? "Updating..." : "Update password"}
+                {loading ? t("updating") : t("updatePassword")}
               </Button>
             </form>
           </CardContent>

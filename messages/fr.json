@@ -1,0 +1,452 @@
+{
+  "app": {
+    "name": "Sentinel Command",
+    "subtitle": "SIEM Azure"
+  },
+  "common": {
+    "navigation": "Navigation",
+    "accountSettings": "Parametres du compte",
+    "adminDashboard": "Tableau admin",
+    "signOut": "Se deconnecter",
+    "searchPlaceholder": "Rechercher logs, alertes...",
+    "notifications": "Notifications"
+  },
+  "roles": {
+    "admin": "Administrateur",
+    "analyst": "Analyste",
+    "viewer": "Lecteur"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "alerts": "Alertes",
+    "logs": "Visionneuse de logs",
+    "recommendations": "Recommandations",
+    "cases": "Cas",
+    "board": "Board",
+    "playbooks": "Playbooks",
+    "aiAssistant": "Assistant IA",
+    "admin": "Tableau admin"
+  },
+  "language": {
+    "label": "Langue",
+    "english": "Anglais",
+    "french": "Francais"
+  },
+  "dashboard": {
+    "headerTitle": "Vue securite",
+    "title": "Tableau de bord Threat Intelligence",
+    "subtitle": "Surveillance de securite en temps reel et detection des menaces pour votre environnement Azure.",
+    "loading": "Chargement des statistiques...",
+    "alertTrend": "Tendance des alertes (24h)",
+    "last24h": "Dernieres 24 heures (donnees)",
+    "severityDistribution": "Distribution des severites",
+    "recentAlerts": "Alertes recentes",
+    "viewAll": "Voir tout",
+    "noRecentAlerts": "Aucune alerte recente.",
+    "topAttackOrigins": "Principales origines d'attaque",
+    "noAttackSourceData": "Aucune donnee d'origine d'attaque disponible.",
+    "vsLast24h": "vs 24 dernieres heures"
+  },
+  "pages": {
+    "alerts": "Gestion des alertes",
+    "logs": "Visionneuse de logs",
+    "cases": "Gestion des cas",
+    "caseDetails": "Details du cas",
+    "board": "Board d'investigation",
+    "playbooks": "Playbooks",
+    "account": "Parametres du compte",
+    "chatbot": "Assistant IA securite",
+    "admin": "Tableau admin",
+    "userManagement": "Gestion des utilisateurs",
+    "recommendations": "Recommandations"
+  },
+  "board": {
+    "nodeLibrary": "Bibliotheque de noeuds",
+    "searchPlaceholder": "Rechercher alertes/logs...",
+    "alertsTab": "Alertes",
+    "logsTab": "Logs",
+    "boardManagement": "Gestion des boards",
+    "optionalBoardName": "Nom optionnel du board",
+    "caseBoards": "Boards du cas",
+    "createMaster": "Creer Master",
+    "createSub": "Creer Sub ({count}/3)",
+    "emptySubBoard": "Sub-board vide",
+    "noMasterBoard": "Aucun board master",
+    "openCaseBoardHint": "Ouvrez un board de cas (`/board?caseId=...`) pour gerer la hierarchie.",
+    "myPersonalBoards": "Mes boards personnels",
+    "personalBoardExists": "Board personnel existe",
+    "createPersonalBoard": "Creer board personnel",
+    "noPersonalBoards": "Aucun board personnel.",
+    "delete": "Supprimer",
+    "saving": "Sauvegarde...",
+    "savedAt": "Sauvegarde {time}",
+    "ready": "Pret",
+    "save": "Sauver",
+    "layout": "Disposition",
+    "apply": "Appliquer",
+    "currentBoard": "Board actuel",
+    "noBoardSelected": "Aucun board selectionne",
+    "viewOnly": "Lecture seule",
+    "viewOnlyHint": "Vous pouvez voir ce board, mais la modification est desactivee pour votre role.",
+    "selectBoardHint": "Creez ou selectionnez un board pour commencer l'investigation.",
+    "dragHint": "Glissez les alertes/logs depuis la bibliotheque et reliez-les.",
+    "errors": {
+      "createPersonalDenied": "Vous n'etes pas autorise a creer des boards personnels.",
+      "createCaseDenied": "Vous n'etes pas autorise a creer des boards de cas.",
+      "deleteDenied": "Vous n'etes pas autorise a supprimer des boards."
+    }
+  },
+  "recommendations": {
+    "title": "Recommandations de securite",
+    "subtitle": "Actions priorisees pour renforcer votre posture de securite selon les menaces actuelles.",
+    "completionProgress": "Progression",
+    "completionSummary": "{completed} sur {total} recommandations implementees",
+    "criticalPending": "Critiques en attente",
+    "criticalPendingHint": "Action immediate requise pour reduire le risque",
+    "quickWins": "Gains rapides disponibles",
+    "quickWinsHint": "Actions a faible effort avec impact eleve",
+    "loading": "Chargement des recommandations...",
+    "description": "Description",
+    "expectedImpact": "Impact attendu",
+    "relatedAlerts": "Alertes liees",
+    "startImplementation": "Demarrer l'implementation",
+    "createTicket": "Creer un ticket",
+    "noRecommendations": "Aucune recommandation disponible.",
+    "effortLow": "Effort faible",
+    "effortMedium": "Effort moyen",
+    "effortHigh": "Effort eleve",
+    "statusPending": "En attente",
+    "statusInProgress": "En cours",
+    "statusCompleted": "Termine"
+  },
+  "cases": {
+    "title": "Cas",
+    "subtitle": "Suivez l'avancement, les notes, les taches et les preuves.",
+    "totalCount": "{count} au total",
+    "loading": "Chargement des cas...",
+    "empty": "Aucun cas pour le moment. Creez-en un depuis une alerte dans <alertsLink>Gestion des alertes</alertsLink>.",
+    "alertId": "Alerte {id}",
+    "assignee": "Assigne: {value}",
+    "unassigned": "Non assigne",
+    "updated": "Mis a jour: {value}",
+    "openCase": "Ouvrir le cas",
+    "status": {
+      "open": "Ouvert",
+      "in_progress": "En cours",
+      "resolved": "Resolu",
+      "closed": "Ferme"
+    },
+    "errors": {
+      "loadCases": "Echec du chargement des cas",
+      "loadCasesWithStatus": "Echec du chargement des cas ({status})"
+    }
+  },
+  "caseDetails": {
+    "loadingCase": "Chargement du cas...",
+    "caseNotFound": "Cas introuvable",
+    "caseTitle": "Cas {id}",
+    "openInBoard": "Ouvrir dans le Board",
+    "status": "Statut",
+    "priority": "Priorite",
+    "sla": "SLA",
+    "due": "Echeance",
+    "statusValue": {
+      "open": "Ouvert",
+      "in_progress": "En cours",
+      "resolved": "Resolu",
+      "closed": "Ferme"
+    },
+    "priorityValue": {
+      "low": "Faible",
+      "medium": "Moyenne",
+      "high": "Elevee",
+      "critical": "Critique"
+    },
+    "slaStatus": {
+      "on_track": "dans les temps",
+      "at_risk": "a risque",
+      "breached": "depasse"
+    },
+    "workflow": {
+      "title": "Workflow SOC",
+      "disposition": "Disposition",
+      "dispositionValue": {
+        "true_positive": "Vrai positif",
+        "benign_true_positive": "Vrai positif benin",
+        "false_positive": "Faux positif",
+        "duplicate": "Doublon"
+      },
+      "businessImpact": "Impact metier",
+      "rootCause": "Cause racine",
+      "containmentSummary": "Resume du confinement",
+      "recoverySummary": "Resume de la reprise",
+      "postIncidentSummary": "Resume post-incident",
+      "save": "Sauver le workflow",
+      "resolve": "Resoudre",
+      "close": "Clore",
+      "readiness": {
+        "evidence": "Preuves",
+        "response": "Reponse",
+        "timeline": "Timeline",
+        "hypothesis": "Hypothese",
+        "logsLinked": "Logs lies"
+      }
+    },
+    "playbook": {
+      "title": "Execution du playbook",
+      "selectTemplate": "Selectionner un template",
+      "bind": "Associer le playbook",
+      "reseed": "Resemer les taches manquantes",
+      "strictMode": "Mode strict",
+      "standardMode": "Mode standard",
+      "stepsProgress": "{done}/{total} etapes",
+      "required": "obligatoire",
+      "optional": "optionnel",
+      "noneBound": "Aucun playbook associe a ce cas.",
+      "stepStatus": {
+        "pending": "En attente",
+        "in_progress": "En cours",
+        "completed": "Termine",
+        "skipped": "Ignore",
+        "blocked": "Bloque"
+      }
+    },
+    "stage": {
+      "triage": "Triage",
+      "investigation": "Investigation",
+      "containment": "Confinement",
+      "eradication_recovery": "Eradication/Recuperation",
+      "post_incident": "Post-incident"
+    },
+    "relation": {
+      "primary": "Principal",
+      "related_to": "Lie",
+      "same_actor": "Meme acteur",
+      "same_ip": "Meme IP",
+      "same_resource": "Meme ressource"
+    },
+    "relatedAlerts": "Alertes liees",
+    "searchAlerts": "Rechercher des alertes",
+    "relatedLogs": "Logs lies",
+    "searchLogs": "Rechercher des logs",
+    "add": "Ajouter",
+    "remove": "Retirer",
+    "tasks": "Taches",
+    "addTask": "Ajouter une tache",
+    "notes": "Notes",
+    "investigationNote": "Note d'investigation",
+    "addNote": "Ajouter une note",
+    "evidence": "Preuves",
+    "evidenceLabel": "Libelle de preuve",
+    "evidenceType": {
+      "note": "Note",
+      "link": "Lien",
+      "file": "Fichier",
+      "hash": "Hash",
+      "ioc": "IOC"
+    },
+    "optionalUrl": "URL (optionnel)",
+    "optionalSha": "SHA-256 (optionnel)",
+    "details": "Details",
+    "addEvidence": "Ajouter une preuve",
+    "hypotheses": "Hypotheses",
+    "hypothesis": "Hypothese",
+    "hypothesisStatus": {
+      "open": "Ouverte",
+      "confirmed": "Confirmee",
+      "rejected": "Rejetee"
+    },
+    "confirm": "Confirmer",
+    "reject": "Rejeter",
+    "responseActions": "Actions de reponse",
+    "actionType": {
+      "contain_host": "Confinement host",
+      "disable_user": "Desactiver utilisateur",
+      "block_ip": "Bloquer IP",
+      "block_domain": "Bloquer domaine",
+      "block_hash": "Bloquer hash",
+      "revoke_sessions": "Revoquer sessions",
+      "isolate_resource": "Isoler ressource",
+      "other": "Autre"
+    },
+    "target": "Cible",
+    "responseStatus": {
+      "planned": "Planifie",
+      "in_progress": "En cours",
+      "completed": "Termine",
+      "failed": "Echoue",
+      "cancelled": "Annule"
+    },
+    "complete": "Terminer",
+    "timeline": "Timeline",
+    "timelineEventTitle": "Titre de l'evenement",
+    "timelineType": {
+      "first_seen": "Premiere observation",
+      "detection": "Detection",
+      "triage": "Triage",
+      "containment": "Confinement",
+      "eradication": "Eradication",
+      "recovery": "Recuperation",
+      "post_incident": "Post-incident",
+      "custom": "Personnalise"
+    },
+    "activity": "Activite",
+    "errors": {
+      "loadWorkspace": "Echec du chargement de l'espace cas",
+      "loadCase": "Echec du chargement du cas",
+      "updateCase": "Echec de mise a jour du cas"
+    }
+  },
+  "playbooks": {
+    "loading": "Chargement des playbooks...",
+    "disabled": "Les playbooks sont desactives. Activez la fonctionnalite experimentale dans le tableau admin.",
+    "subtitle": "Gerez les templates de playbook, publiez des versions et appliquez une execution stricte des cas.",
+    "metrics": {
+      "mtta": "MTTA",
+      "mttr": "MTTR",
+      "reopenRate": "Taux de reouverture",
+      "falsePositive": "Faux positifs"
+    },
+    "library": {
+      "title": "Bibliotheque de playbooks",
+      "empty": "Aucun playbook pour le moment."
+    },
+    "state": {
+      "active": "Actif",
+      "inactive": "Inactif"
+    },
+    "editor": {
+      "title": "Editeur de playbook",
+      "selectPlaybook": "Selectionnez un playbook a modifier.",
+      "name": "Nom",
+      "description": "Description",
+      "strictMode": "Mode strict",
+      "required": "Obligatoire",
+      "stepLabel": "Etape {index}",
+      "addStep": "Ajouter une etape",
+      "changeNotes": "Notes de changement pour cette version brouillon",
+      "saveDraft": "Sauver version brouillon",
+      "saveApprove": "Sauver + approuver",
+      "versionHistory": "Historique des versions"
+    },
+    "create": {
+      "title": "Creer un playbook",
+      "stepTitle": "Titre etape {index}",
+      "button": "Creer"
+    },
+    "stage": {
+      "triage": "Triage",
+      "investigation": "Investigation",
+      "containment": "Confinement",
+      "eradication_recovery": "Eradication/Recuperation",
+      "post_incident": "Post-incident"
+    },
+    "versionStatus": {
+      "draft": "brouillon",
+      "approved": "approuve",
+      "archived": "archive"
+    },
+    "alertType": {
+      "incident": "Incident",
+      "security_event": "Evenement de securite",
+      "activity": "Activite",
+      "firewall": "Firewall"
+    },
+    "approve": "Approuver",
+    "rollback": "Restaurer",
+    "remove": "Retirer"
+  },
+  "logs": {
+    "subtitle": "Parcourez et analysez les logs de securite provenant des connecteurs de donnees Azure Sentinel.",
+    "searchPlaceholder": "Rechercher des logs par message, utilisateur, adresse IP...",
+    "filters": {
+      "severity": "Severite",
+      "allSeverity": "Toutes les severites",
+      "source": "Source",
+      "allSources": "Toutes les sources",
+      "noisiest": "Plus bruyantes",
+      "topSources": "Top {count} sources"
+    },
+    "actions": {
+      "refresh": "Rafraichir les logs",
+      "export": "Exporter les logs"
+    },
+    "showingEntries": "Affichage de {shown} sur {total} entrees de log",
+    "pageOf": "Page {page} sur {total}",
+    "loading": "Chargement des logs...",
+    "columns": {
+      "timestamp": "Horodatage",
+      "severity": "Severite",
+      "source": "Source",
+      "message": "Message",
+      "ipAddress": "Adresse IP",
+      "user": "Utilisateur"
+    },
+    "severity": {
+      "critical": "Critique",
+      "high": "Elevee",
+      "medium": "Moyenne",
+      "low": "Faible",
+      "informational": "Info"
+    },
+    "detail": {
+      "actor": "Acteur",
+      "resource": "Ressource",
+      "status": "Statut",
+      "eventData": "Donnees d'evenement",
+      "rawPayload": "Payload brut"
+    },
+    "pagination": {
+      "previous": "Precedent",
+      "next": "Suivant",
+      "perPage": "{count} par page"
+    },
+    "emptyFiltered": "Aucun log ne correspond a vos filtres.",
+    "unknown": "Inconnu",
+    "noMessage": "Aucun message fourni.",
+    "payloadAttached": "Payload d'evenement joint. Ouvrez pour voir les details.",
+    "errors": {
+      "load": "Echec du chargement des logs",
+      "loadWithStatus": "Echec du chargement des logs ({status})"
+    }
+  },
+  "auth": {
+    "accessDenied": "Acces refuse",
+    "accessDeniedDescription": "Votre compte n'a pas la permission de voir cette page. Contactez un administrateur pour demander l'acces.",
+    "goToDashboard": "Aller au tableau de bord",
+    "accountSettings": "Parametres du compte",
+    "unknownAuthError": "Erreur d'authentification inconnue.",
+    "pleaseSignIn": "Veuillez vous connecter pour continuer.",
+    "authUnavailable": "Le service d'authentification est indisponible. Verifiez que la stack Supabase locale tourne sur http://127.0.0.1:54321.",
+    "confirmEmail": "Verifiez votre email pour confirmer votre compte avant de vous connecter.",
+    "resetEmailSent": "Email de reinitialisation envoye. Verifiez votre boite de reception.",
+    "accessTitle": "Acces Sentinel Command",
+    "secureLogin": "Connexion securisee",
+    "signInTab": "Connexion",
+    "signUpTab": "Inscription",
+    "resetTab": "Reset",
+    "email": "Email",
+    "emailPlaceholder": "vous@entreprise.com",
+    "password": "Mot de passe",
+    "signingIn": "Connexion...",
+    "signIn": "Se connecter",
+    "fullName": "Nom complet",
+    "fullNamePlaceholder": "Alex Morgan",
+    "createStrongPassword": "Creez un mot de passe fort",
+    "creatingAccount": "Creation du compte...",
+    "createAccount": "Creer un compte",
+    "newAccountRoleHint": "Les nouveaux comptes commencent en Lecteur. Un admin peut changer votre role.",
+    "sending": "Envoi...",
+    "sendResetLink": "Envoyer le lien de reset",
+    "useRecoveryLink": "Utilisez le lien de recuperation de mot de passe recu par email pour continuer.",
+    "passwordLength": "Le mot de passe doit contenir au moins 8 caracteres.",
+    "passwordMismatch": "Les mots de passe ne correspondent pas.",
+    "passwordUpdated": "Mot de passe mis a jour. Redirection vers le tableau de bord...",
+    "updatePasswordTitle": "Mettre a jour votre mot de passe",
+    "newPassword": "Nouveau mot de passe",
+    "confirmPassword": "Confirmer le mot de passe",
+    "repeatPassword": "Repetez votre mot de passe",
+    "updating": "Mise a jour...",
+    "updatePassword": "Mettre a jour le mot de passe"
+  }
+}
