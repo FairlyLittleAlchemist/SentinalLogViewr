@@ -23,17 +23,11 @@ This is a Next.js + Supabase SOC dashboard for:
 ## 3) Core SOC workflow implemented
 
 1. Ingest telemetry CSVs -> stage in `stg_events` -> publish alerts/logs.
-2. Analysts triage alerts/logs in app and set analyst override state.
-3. Create a case from alert (primary alert link auto-created).
-4. Investigate in case workspace:
-   - notes/tasks/evidence,
-   - related alerts/logs linking,
-   - hypotheses,
-   - response actions,
-   - timeline milestones.
-5. Update SOC workflow metadata (phase, disposition, confidence, impact, root cause, containment/recovery/post-incident summaries).
-6. Open case in board (`/board?caseId=...&seed=1`) and map relationships visually.
-7. Resolve/close with server-side closure gates and full activity trail.
+2. Analysts triage alerts/logs in app.
+3. Create a case from alert.
+4. Add notes/tasks/evidence + link related alerts and logs.
+5. Open case in board (`/board?caseId=...`) and map relationships visually.
+6. Resolve/close case with activity trail.
 
 ## 4) UI routes
 
@@ -43,7 +37,6 @@ This is a Next.js + Supabase SOC dashboard for:
 - `/recommendations` remediation recommendations
 - `/cases` case list
 - `/cases/[id]` full case workspace
-- `/playbooks` playbook library/editor (experimental flag-gated)
 - `/board` investigation board
 - `/chatbot` AI assistant
 - `/account` account settings
@@ -76,28 +69,12 @@ This is a Next.js + Supabase SOC dashboard for:
 - `app/api/cases/[id]/evidence/route.ts` - add evidence
 - `app/api/cases/[id]/alerts/route.ts` - link/unlink alerts to case
 - `app/api/cases/[id]/logs/route.ts` - link/unlink logs to case
-- `app/api/cases/[id]/hypotheses/route.ts` - add case hypothesis
-- `app/api/cases/[id]/hypotheses/[hypothesisId]/route.ts` - update hypothesis
-- `app/api/cases/[id]/response-actions/route.ts` - add response action
-- `app/api/cases/[id]/response-actions/[actionId]/route.ts` - update response action
-- `app/api/cases/[id]/timeline/route.ts` - add timeline event
-- `app/api/cases/[id]/timeline/[eventId]/route.ts` - update timeline event
 - `app/api/cases/[id]/graph/route.ts` - build board seed graph for a case
-- `app/api/cases/[id]/playbook/route.ts` - bind/reseed case playbook execution + progress
-- `app/api/cases/[id]/playbook/steps/[stepStatusId]/route.ts` - update playbook step status
 
 ### Boards
 - `app/api/boards/route.ts` - list/create boards
 - `app/api/boards/[id]/route.ts` - board read/update/delete
 - `app/api/boards/[id]/state/route.ts` - persist full node/edge/viewport state
-
-### Playbooks/feature flags/metrics
-- `app/api/feature-flags/route.ts` - list/update feature flags (admin writes)
-- `app/api/playbooks/route.ts` - playbook list/create
-- `app/api/playbooks/[id]/route.ts` - playbook detail/update/delete(deactivate fallback)
-- `app/api/playbooks/[id]/approve/route.ts` - approve/promote playbook version
-- `app/api/playbooks/[id]/rollback/route.ts` - rollback current version
-- `app/api/metrics/soc/route.ts` - SOC KPI endpoint (MTTA/MTTR/reopen/false-positive/SLA/workload)
 
 ### Saved views and chat
 - `app/api/saved-views/route.ts` - list/create saved alert views
@@ -125,17 +102,6 @@ This is a Next.js + Supabase SOC dashboard for:
 - `alert_case_activity` - audit/activity events
 - `alert_case_alerts` - many-to-many case <-> alerts links (+ relation type)
 - `alert_case_logs` - many-to-many case <-> logs links (+ relation type)
-- `case_playbook_executions` - case-playbook binding + strict-mode execution state
-- `case_playbook_step_status` - per-step execution status
-
-### Playbooks/feature flags
-- `feature_flags` - admin-managed experimental toggles
-- `playbook_templates` - playbook template metadata + current version pointer
-- `playbook_template_versions` - version history + approval metadata
-- `playbook_template_steps` - ordered stage-gated steps per version
-- `alert_case_hypotheses` - investigation hypotheses and confidence
-- `alert_case_response_actions` - containment/response action tracking
-- `alert_case_timeline_events` - investigation timeline milestones
 
 ### Boards
 - `investigation_boards` - board metadata, owner, optional `case_id`, viewport
@@ -180,9 +146,6 @@ This is a Next.js + Supabase SOC dashboard for:
 - `20260214230000_investigation_boards.sql` - board tables + policies
 - `20260215193000_case_alert_links.sql` - many-to-many case-alert links
 - `20260215195500_case_log_links.sql` - many-to-many case-log links
-- `20260216193000_case_workflow_refinement.sql` - workflow phase/disposition + hypotheses/actions/timeline
-- `20260216230000_playbooks_feature_flags_and_execution.sql` - feature flags + playbook templates/versioning/execution
-- `20260216193000_case_workflow_refinement.sql` - workflow phase fields + hypotheses/actions/timeline tables
 
 ## 8) File-by-file reference
 
@@ -290,12 +253,6 @@ This is a Next.js + Supabase SOC dashboard for:
 - `app/api/cases/[id]/evidence/route.ts` - add evidence
 - `app/api/cases/[id]/alerts/route.ts` - case-alert links
 - `app/api/cases/[id]/logs/route.ts` - case-log links
-- `app/api/cases/[id]/hypotheses/route.ts` - case hypotheses create
-- `app/api/cases/[id]/hypotheses/[hypothesisId]/route.ts` - case hypotheses update
-- `app/api/cases/[id]/response-actions/route.ts` - response actions create
-- `app/api/cases/[id]/response-actions/[actionId]/route.ts` - response actions update
-- `app/api/cases/[id]/timeline/route.ts` - timeline events create
-- `app/api/cases/[id]/timeline/[eventId]/route.ts` - timeline events update
 - `app/api/cases/[id]/graph/route.ts` - build case graph for board seeding
 - `app/api/boards/route.ts` - boards list/create
 - `app/api/boards/[id]/route.ts` - board get/update/delete
