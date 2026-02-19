@@ -23,9 +23,9 @@ export interface DashboardData {
   recentAlerts: Alert[]
 }
 
-let alerts: Alert[] = [...mockAlerts]
-let logs: LogEntry[] = [...mockLogs]
-let recommendations: Recommendation[] = [...recommendedActions]
+const alerts: Alert[] = [...mockAlerts]
+const logs: LogEntry[] = [...mockLogs]
+const recommendations: Recommendation[] = [...recommendedActions]
 
 export function getAlerts(): Alert[] {
   return alerts

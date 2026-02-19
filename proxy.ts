@@ -55,7 +55,7 @@ async function isSupabaseReachable(supabaseUrl: string) {
   return lastSupabaseHealth
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   if (
@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next()
   }
 
-  let response = NextResponse.next()
+  const response = NextResponse.next()
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -105,8 +105,7 @@ export async function middleware(request: NextRequest) {
   try {
     const result = await supabase.auth.getUser()
     user = result.data.user
-  } catch (error) {
-    // If Supabase is unreachable (e.g., local stack down), let the page load and show the auth form.
+  } catch {
     const redirectUrl = request.nextUrl.clone()
     redirectUrl.pathname = "/auth"
     redirectUrl.searchParams.set("next", pathname)
@@ -135,7 +134,6 @@ export async function middleware(request: NextRequest) {
       .maybeSingle()
     profile = data
   } catch {
-    // If profile lookup fails, allow navigation but without escalation.
     return response
   }
 

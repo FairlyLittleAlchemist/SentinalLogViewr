@@ -28,8 +28,8 @@ const stateSchema = z.object({
     y: z.number(),
     zoom: z.number(),
   }),
-  nodes: z.array(nodeSchema),
-  edges: z.array(edgeSchema),
+  nodes: z.array(nodeSchema).max(1500),
+  edges: z.array(edgeSchema).max(3000),
 })
 
 const EDGE_TYPE_MAP: Record<string, string> = {
@@ -77,13 +77,18 @@ export async function PUT(
     return NextResponse.json({ error: "Invalid board state payload" }, { status: 400 })
   }
 
-  const { error: boardUpdateError } = await supabase
+  const { data: boardRow, error: boardUpdateError } = await supabase
     .from("investigation_boards")
     .update({ viewport: parsed.data.viewport })
     .eq("id", id)
+    .select("id")
+    .maybeSingle()
 
   if (boardUpdateError) {
     return NextResponse.json({ error: boardUpdateError.message }, { status: 500 })
+  }
+  if (!boardRow) {
+    return NextResponse.json({ error: "Board not found" }, { status: 404 })
   }
 
   const { error: deleteEdgesError } = await supabase

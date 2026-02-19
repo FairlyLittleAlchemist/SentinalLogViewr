@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PlaybookExecutionCard } from "@/components/cases/playbook-execution-card"
 import { useLocale, useTranslations } from "next-intl"
 
 type CaseDetail = {
@@ -126,6 +127,8 @@ type PlaybookExecutionState = {
   stageProgress: Record<"triage" | "investigation" | "containment" | "eradication_recovery" | "post_incident", { done: number; total: number }>
 }
 
+type PlaybookStepStatus = "pending" | "in_progress" | "completed" | "skipped" | "blocked"
+
 type ClosureReadiness = {
   checks: {
     hasEvidence: boolean
@@ -141,6 +144,49 @@ type ClosureReadiness = {
 function formatDate(value: string | null | undefined, locale: string) {
   if (!value) return "n/a"
   return new Date(value).toLocaleString(locale, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone: "UTC" })
+}
+
+function computePlaybookDerived(state: PlaybookExecutionState): PlaybookExecutionState {
+  if (!state.execution) return state
+  const stageProgress: PlaybookExecutionState["stageProgress"] = {
+    triage: { done: 0, total: 0 },
+    investigation: { done: 0, total: 0 },
+    containment: { done: 0, total: 0 },
+    eradication_recovery: { done: 0, total: 0 },
+    post_incident: { done: 0, total: 0 },
+  }
+
+  let done = 0
+  let total = 0
+  let requiredDone = 0
+  let requiredTotal = 0
+  for (const step of state.steps) {
+    total += 1
+    stageProgress[step.stage].total += 1
+    const complete = step.status === "completed" || step.status === "skipped"
+    if (complete) {
+      done += 1
+      stageProgress[step.stage].done += 1
+    }
+    if (step.required) {
+      requiredTotal += 1
+      if (complete) requiredDone += 1
+    }
+  }
+
+  return {
+    ...state,
+    execution: {
+      ...state.execution,
+      progress: {
+        done,
+        total,
+        requiredDone,
+        requiredTotal,
+      },
+    },
+    stageProgress,
+  }
 }
 
 export default function CaseDetailPage() {
@@ -161,7 +207,6 @@ export default function CaseDetailPage() {
   const [responseActions, setResponseActions] = useState<ResponseAction[]>([])
   const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([])
   const [closureReadiness, setClosureReadiness] = useState<ClosureReadiness | null>(null)
-  const [playbooksEnabled, setPlaybooksEnabled] = useState(false)
   const [availablePlaybooks, setAvailablePlaybooks] = useState<PlaybookTemplateOption[]>([])
   const [selectedPlaybookId, setSelectedPlaybookId] = useState<string>("")
   const [playbookState, setPlaybookState] = useState<PlaybookExecutionState | null>(null)
@@ -204,25 +249,17 @@ export default function CaseDetailPage() {
   const linkedLogIds = useMemo(() => new Set(linkedLogs.map((item) => item.logId)), [linkedLogs])
   const relationLabel = useCallback((value: "primary" | "related_to" | "same_actor" | "same_ip" | "same_resource") => tc(`relation.${value}`), [tc])
   const stageLabel = useCallback((value: "triage" | "investigation" | "containment" | "eradication_recovery" | "post_incident") => tc(`stage.${value}`), [tc])
-  const stepStatusTone = useCallback((status: "pending" | "in_progress" | "completed" | "skipped" | "blocked") => {
-    if (status === "completed") return "bg-emerald-500/10 text-emerald-700 border-emerald-500/30"
-    if (status === "in_progress") return "bg-blue-500/10 text-blue-700 border-blue-500/30"
-    if (status === "blocked") return "bg-red-500/10 text-red-700 border-red-500/30"
-    if (status === "skipped") return "bg-amber-500/10 text-amber-700 border-amber-500/30"
-    return "bg-muted text-muted-foreground border-border"
-  }, [])
 
   const loadCase = useCallback(async (options?: { silent?: boolean }) => {
     const silent = options?.silent ?? false
     if (!silent) setLoading(true)
     try {
-      const [detailRes, alertsRes, logsRes, playbookRes, playbookListRes, flagsRes] = await Promise.all([
+      const [detailRes, alertsRes, logsRes, playbookRes, playbookListRes] = await Promise.all([
         fetch(`/api/cases/${caseId}`),
         fetch(`/api/cases/${caseId}/alerts`),
         fetch(`/api/cases/${caseId}/logs`),
         fetch(`/api/cases/${caseId}/playbook`),
         fetch("/api/playbooks?isActive=true"),
-        fetch("/api/feature-flags"),
       ])
       if (!detailRes.ok) {
         throw new Error(`${tc("errors.loadWorkspace")} (${detailRes.status})`)
@@ -237,7 +274,6 @@ export default function CaseDetailPage() {
         : { logs: [] as LinkedLog[] }
       const playbookPayload = playbookRes.ok ? await playbookRes.json() as PlaybookExecutionState : null
       const playbookListPayload = playbookListRes.ok ? await playbookListRes.json() as { playbooks?: PlaybookTemplateOption[] } : null
-      const flagsPayload = flagsRes.ok ? await flagsRes.json() as { flags?: Array<{ key: string; enabled: boolean }> } : null
 
       setCaseItem(detail.case)
       setTasks(detail.tasks ?? [])
@@ -262,7 +298,6 @@ export default function CaseDetailPage() {
       } else if (options.length) {
         setSelectedPlaybookId((current) => current || options[0].id)
       }
-      setPlaybooksEnabled(Boolean(flagsPayload?.flags?.some((flag) => flag.key === "experimental_playbooks" && flag.enabled)))
       setLinkedAlerts(alertsPayload.alerts ?? [])
       setLinkedLogs(logsPayload.logs ?? [])
       setWorkflowDraft({
@@ -310,6 +345,22 @@ export default function CaseDetailPage() {
   }, [logSearch])
 
   const patchCase = useCallback(async (updates: Record<string, unknown>) => {
+    const previousCase = caseItem
+    if (caseItem) {
+      setCaseItem({
+        ...caseItem,
+        status: (updates.status as CaseDetail["status"]) ?? caseItem.status,
+        priority: (updates.priority as CaseDetail["priority"]) ?? caseItem.priority,
+        workflowPhase: (updates.workflowPhase as CaseDetail["workflowPhase"]) ?? caseItem.workflowPhase,
+        disposition: updates.disposition === undefined ? caseItem.disposition : (updates.disposition as CaseDetail["disposition"]),
+        confidenceScore: (updates.confidenceScore as number) ?? caseItem.confidenceScore,
+        businessImpact: updates.businessImpact === undefined ? caseItem.businessImpact : (updates.businessImpact as string | null),
+        rootCause: updates.rootCause === undefined ? caseItem.rootCause : (updates.rootCause as string | null),
+        containmentSummary: updates.containmentSummary === undefined ? caseItem.containmentSummary : (updates.containmentSummary as string | null),
+        recoverySummary: updates.recoverySummary === undefined ? caseItem.recoverySummary : (updates.recoverySummary as string | null),
+        postIncidentSummary: updates.postIncidentSummary === undefined ? caseItem.postIncidentSummary : (updates.postIncidentSummary as string | null),
+      })
+    }
     const res = await fetch(`/api/cases/${caseId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -317,11 +368,12 @@ export default function CaseDetailPage() {
     })
     const payload = await res.json().catch(() => ({})) as { error?: string }
     if (!res.ok) {
+      if (previousCase) setCaseItem(previousCase)
       setError(payload.error ?? tc("errors.updateCase"))
       return
     }
     await loadCase({ silent: true })
-  }, [caseId, loadCase, tc])
+  }, [caseId, caseItem, loadCase, tc])
 
   const postJson = useCallback(async (url: string, body: Record<string, unknown>) => {
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
@@ -383,26 +435,35 @@ export default function CaseDetailPage() {
     }
   }, [caseId, loadCase])
 
-  const setPlaybookStepStatus = useCallback(async (statusId: string, status: "pending" | "in_progress" | "completed" | "skipped" | "blocked") => {
+  const setPlaybookStepStatus = useCallback(async (statusId: string, status: PlaybookStepStatus) => {
+    const previousState = playbookState
+    setPlaybookState((current) => {
+      if (!current) return current
+      return computePlaybookDerived({
+        ...current,
+        steps: current.steps.map((step) => step.statusId === statusId ? { ...step, status } : step),
+      })
+    })
     const res = await fetch(`/api/cases/${caseId}/playbook/steps/${statusId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     })
     if (!res.ok) {
+      setPlaybookState(previousState)
       const payload = await res.json().catch(() => ({})) as { error?: string }
       setError(payload.error ?? "Failed to update playbook step")
       return
     }
     await loadCase({ silent: true })
-  }, [caseId, loadCase])
+  }, [caseId, loadCase, playbookState])
 
   if (loading) return <DashboardLayout><AppHeader title={t("caseDetails")} /><div className="p-6 text-sm text-muted-foreground">{tc("loadingCase")}</div></DashboardLayout>
   if (error || !caseItem) return <DashboardLayout><AppHeader title={t("caseDetails")} /><div className="p-6 text-sm text-destructive">{error ?? tc("caseNotFound")}</div></DashboardLayout>
 
   return (
     <DashboardLayout>
-      <AppHeader title={tc("caseTitle", { id: caseItem.id.slice(0, 8) })} />
+      <AppHeader title={caseItem.title || tc("caseTitle", { id: caseItem.id.slice(0, 8) })} />
       <ScrollArea className="flex-1">
         <div className="flex flex-col gap-4 p-4 lg:p-6">
           <Card>
@@ -471,85 +532,26 @@ export default function CaseDetailPage() {
             </CardContent>
           </Card>
 
-          {playbooksEnabled ? (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{tc("playbook.title")}</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4 text-sm">
-                <div className="flex flex-wrap items-end gap-2 rounded-md border border-border bg-muted/20 p-3">
-                  <Select value={selectedPlaybookId} onValueChange={setSelectedPlaybookId}>
-                    <SelectTrigger className="h-9 w-full min-w-[260px] md:w-[320px]"><SelectValue placeholder={tc("playbook.selectTemplate")} /></SelectTrigger>
-                    <SelectContent>
-                      {availablePlaybooks.map((entry) => (
-                        <SelectItem key={entry.id} value={entry.id}>{entry.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="sm" className="h-9" onClick={() => void bindPlaybook()}>{tc("playbook.bind")}</Button>
-                  <Button size="sm" variant="outline" className="h-9" onClick={() => void reseedPlaybookTasks()}>{tc("playbook.reseed")}</Button>
-                </div>
-
-                {playbookState?.execution ? (
-                  <div className="space-y-3 rounded-lg border border-border bg-card p-3 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="outline" className="font-medium">{playbookState.execution.template.name}</Badge>
-                      <Badge variant="outline" className="font-mono">v{playbookState.execution.template.current_version}</Badge>
-                      <Badge variant={playbookState.execution.strictMode ? "default" : "outline"}>
-                        {playbookState.execution.strictMode ? tc("playbook.strictMode") : tc("playbook.standardMode")}
-                      </Badge>
-                      <Badge variant="secondary" className="font-medium">
-                        {tc("playbook.stepsProgress", { done: playbookState.execution.progress.done, total: playbookState.execution.progress.total })}
-                      </Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(playbookState.stageProgress).map(([stage, info]) => (
-                        <Badge key={stage} variant={info.total > 0 && info.done === info.total ? "default" : "outline"} className="text-xs">
-                          {stageLabel(stage as keyof PlaybookExecutionState["stageProgress"])} {info.done}/{info.total}
-                        </Badge>
-                      ))}
-                    </div>
-                    <div className="space-y-2">
-                      {playbookState.steps.map((step) => (
-                        <div key={step.id} className="flex flex-col gap-2 rounded-md border border-border bg-muted/15 px-3 py-2 sm:flex-row sm:items-center">
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium">{step.order}. {step.title}</div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span>{stageLabel(step.stage)}</span>
-                              <Badge variant="outline" className="text-[10px]">
-                                {step.required ? tc("playbook.required") : tc("playbook.optional")}
-                              </Badge>
-                              <Badge variant="outline" className={`text-[10px] ${stepStatusTone(step.status)}`}>
-                                {tc(`playbook.stepStatus.${step.status}`)}
-                              </Badge>
-                            </div>
-                          </div>
-                          <Select
-                            value={step.status}
-                            onValueChange={(value) => {
-                              if (!step.statusId) return
-                              void setPlaybookStepStatus(step.statusId, value as "pending" | "in_progress" | "completed" | "skipped" | "blocked")
-                            }}
-                          >
-                            <SelectTrigger className="h-8 w-full sm:w-44"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">{tc("playbook.stepStatus.pending")}</SelectItem>
-                              <SelectItem value="in_progress">{tc("playbook.stepStatus.in_progress")}</SelectItem>
-                              <SelectItem value="completed">{tc("playbook.stepStatus.completed")}</SelectItem>
-                              <SelectItem value="skipped">{tc("playbook.stepStatus.skipped")}</SelectItem>
-                              <SelectItem value="blocked">{tc("playbook.stepStatus.blocked")}</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-muted-foreground">{tc("playbook.noneBound")}</div>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
+          <PlaybookExecutionCard
+            title={tc("playbook.title")}
+            selectPlaceholder={tc("playbook.selectTemplate")}
+            bindLabel={tc("playbook.bind")}
+            reseedLabel={tc("playbook.reseed")}
+            strictLabel={tc("playbook.strictMode")}
+            standardLabel={tc("playbook.standardMode")}
+            requiredLabel={tc("playbook.required")}
+            optionalLabel={tc("playbook.optional")}
+            noneBoundLabel={tc("playbook.noneBound")}
+            selectedPlaybookId={selectedPlaybookId}
+            availablePlaybooks={availablePlaybooks.map((entry) => ({ id: entry.id, name: entry.name }))}
+            state={playbookState}
+            stageLabel={stageLabel}
+            statusLabel={(status) => tc(`playbook.stepStatus.${status}`)}
+            onSelectPlaybook={setSelectedPlaybookId}
+            onBind={() => void bindPlaybook()}
+            onReseed={() => void reseedPlaybookTasks()}
+            onSetStepStatus={(statusId, status) => void setPlaybookStepStatus(statusId, status)}
+          />
             </TabsContent>
 
             <TabsContent value="intel" className="mt-4 space-y-4">

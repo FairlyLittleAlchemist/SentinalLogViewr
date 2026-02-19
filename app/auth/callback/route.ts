@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   const type = requestUrl.searchParams.get("type")
 
   const redirectTarget = type === "recovery" ? "/auth/update-password" : next
-  let response = NextResponse.redirect(new URL(redirectTarget, request.url))
+  const response = NextResponse.redirect(new URL(redirectTarget, request.url))
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY

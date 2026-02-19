@@ -4,41 +4,24 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { ChevronLeft, ChevronRight, LogOut, Shield } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { navItems, playbooksNavItem } from "@/lib/navigation"
 import { useAuth } from "@/components/auth/auth-provider"
-import { EXPERIMENTAL_PLAYBOOKS_FLAG } from "@/lib/feature-flags"
 import { useTranslations } from "next-intl"
 
 export function AppSidebar() {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
-  const [playbooksEnabled, setPlaybooksEnabled] = useState(false)
   const { user, profile, role, loading, signOut } = useAuth()
   const t = useTranslations()
 
-  useEffect(() => {
-    let active = true
-    const loadFlags = async () => {
-      const res = await fetch("/api/feature-flags", { cache: "no-store" }).catch(() => null)
-      if (!active || !res?.ok) return
-      const payload = await res.json().catch(() => null) as { flags?: Array<{ key: string; enabled: boolean }> } | null
-      const enabled = Boolean(payload?.flags?.some((flag) => flag.key === EXPERIMENTAL_PLAYBOOKS_FLAG && flag.enabled))
-      setPlaybooksEnabled(enabled)
-    }
-    void loadFlags()
-    return () => { active = false }
-  }, [])
-
   const visibleNavItems = useMemo(() => {
     const items = navItems.slice()
-    if (playbooksEnabled) {
-      items.splice(5, 0, playbooksNavItem)
-    }
+    items.splice(5, 0, playbooksNavItem)
     return items.filter((item) => item.roles.includes(role))
-  }, [playbooksEnabled, role])
+  }, [role])
   const displayName = profile?.full_name || user?.email || "User"
   const initials = displayName
     .split(" ")

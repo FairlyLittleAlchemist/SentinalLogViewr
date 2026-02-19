@@ -4,8 +4,9 @@ import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AppHeader } from "@/components/app-header"
+import { RenderProfiler } from "@/components/performance/render-profiler"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -695,38 +696,62 @@ export default function AlertsPage() {
 
   async function addCaseNote() {
     if (!caseItem || !caseNoteInput.trim()) return
+    const noteBody = caseNoteInput.trim()
+    const optimisticNote: CaseNote = {
+      id: `temp-note-${Date.now()}`,
+      body: noteBody,
+      createdAt: new Date().toISOString(),
+      createdBy: "me",
+    }
+    const previousNotes = caseNotes
+    setCaseNotes((current) => [optimisticNote, ...current])
+    setCaseNoteInput("")
     try {
       const response = await fetch(`/api/cases/${caseItem.id}/notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body: caseNoteInput }),
+        body: JSON.stringify({ body: noteBody }),
       })
       if (!response.ok) throw new Error(`Failed to add note (${response.status})`)
-      setCaseNoteInput("")
       if (selectedAlert) await loadCaseForAlert(selectedAlert.id)
     } catch (error) {
+      setCaseNotes(previousNotes)
       setLoadError(error instanceof Error ? error.message : "Failed to add note")
     }
   }
 
   async function addCaseTask() {
     if (!caseItem || !caseTaskInput.trim()) return
+    const taskTitle = caseTaskInput.trim()
+    const optimisticTask: CaseTask = {
+      id: `temp-task-${Date.now()}`,
+      title: taskTitle,
+      isDone: false,
+      dueAt: null,
+    }
+    const previousTasks = caseTasks
+    setCaseTasks((current) => [optimisticTask, ...current])
+    setCaseTaskInput("")
     try {
       const response = await fetch(`/api/cases/${caseItem.id}/tasks`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: caseTaskInput }),
+        body: JSON.stringify({ title: taskTitle }),
       })
       if (!response.ok) throw new Error(`Failed to add task (${response.status})`)
-      setCaseTaskInput("")
       if (selectedAlert) await loadCaseForAlert(selectedAlert.id)
     } catch (error) {
+      setCaseTasks(previousTasks)
       setLoadError(error instanceof Error ? error.message : "Failed to add task")
     }
   }
 
   async function toggleTask(task: CaseTask, checked: boolean) {
     if (!caseItem) return
+    const previousTasks = caseTasks
+    setCaseTasks((current) => current.map((entry) => (
+      entry.id === task.id ? { ...entry, isDone: checked } : entry
+    )))
     try {
       const response = await fetch(`/api/cases/${caseItem.id}/tasks/${task.id}`, {
         method: "PATCH",
@@ -736,34 +761,54 @@ export default function AlertsPage() {
       if (!response.ok) throw new Error(`Failed to update task (${response.status})`)
       if (selectedAlert) await loadCaseForAlert(selectedAlert.id)
     } catch (error) {
+      setCaseTasks(previousTasks)
       setLoadError(error instanceof Error ? error.message : "Failed to update task")
     }
   }
 
   async function addCaseEvidence() {
     if (!caseItem || !caseEvidenceLabel.trim()) return
+    const label = caseEvidenceLabel.trim()
+    const url = caseEvidenceUrl.trim() || null
+    const optimisticEvidence: CaseEvidence = {
+      id: `temp-evidence-${Date.now()}`,
+      label,
+      evidenceType: url ? "link" : "note",
+      url,
+      details: null,
+    }
+    const previousEvidence = caseEvidence
+    setCaseEvidence((current) => [optimisticEvidence, ...current])
+    setCaseEvidenceLabel("")
+    setCaseEvidenceUrl("")
     try {
       const response = await fetch(`/api/cases/${caseItem.id}/evidence`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          label: caseEvidenceLabel,
-          evidenceType: caseEvidenceUrl.trim() ? "link" : "note",
-          url: caseEvidenceUrl.trim() || null,
+          label,
+          evidenceType: url ? "link" : "note",
+          url,
           details: null,
         }),
       })
       if (!response.ok) throw new Error(`Failed to add evidence (${response.status})`)
-      setCaseEvidenceLabel("")
-      setCaseEvidenceUrl("")
       if (selectedAlert) await loadCaseForAlert(selectedAlert.id)
     } catch (error) {
+      setCaseEvidence(previousEvidence)
       setLoadError(error instanceof Error ? error.message : "Failed to add evidence")
     }
   }
 
   async function updateCaseAssignee() {
     if (!caseItem) return
+    const selectedAssignee = caseAssignees.find((entry) => entry.id === selectedAssigneeUserId)
+    const previousCase = caseItem
+    setCaseItem({
+      ...caseItem,
+      assignee: selectedAssignee?.name || selectedAssignee?.email || null,
+      assigneeUserId: selectedAssigneeUserId || null,
+    })
     try {
       const response = await fetch(`/api/cases/${caseItem.id}`, {
         method: "PATCH",
@@ -775,6 +820,7 @@ export default function AlertsPage() {
       if (!response.ok) throw new Error(`Failed to update assignee (${response.status})`)
       if (selectedAlert) await loadCaseForAlert(selectedAlert.id)
     } catch (error) {
+      setCaseItem(previousCase)
       setLoadError(error instanceof Error ? error.message : "Failed to update assignee")
     }
   }
@@ -911,6 +957,7 @@ export default function AlertsPage() {
     : "Unknown"
 
   return (
+    <RenderProfiler id="alerts-page">
     <DashboardLayout>
       <AppHeader title={t("alerts")} />
       <ScrollArea className="flex-1">
@@ -1724,5 +1771,6 @@ export default function AlertsPage() {
         </DialogContent>
       </Dialog>
     </DashboardLayout>
+    </RenderProfiler>
   )
 }

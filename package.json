@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "smoke:alerts": "node scripts/smoke-alert-type-check.cjs"
+    "smoke:alerts": "node scripts/smoke-alert-type-check.cjs",
+    "test:e2e:smoke": "playwright test tests/e2e/smoke.spec.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.75",
@@ -76,12 +77,16 @@
     "zod": "^3.24.1"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.3",
+    "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.1.13",
     "@types/dagre": "^0.7.53",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/react-syntax-highlighter": "^15.5.13",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "^16.1.6",
     "postcss": "^8.5",
     "supabase": "^2.75.5",
     "tailwindcss": "^3.4.17",

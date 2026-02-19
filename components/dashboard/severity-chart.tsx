@@ -39,12 +39,15 @@ export function SeverityChart({ distribution }: SeverityChartProps) {
                 </Pie>
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: "hsl(222, 47%, 8%)",
-                    border: "1px solid hsl(222, 30%, 16%)",
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
                     borderRadius: "8px",
-                    color: "hsl(210, 40%, 95%)",
+                    color: "hsl(var(--foreground))",
                     fontSize: "12px",
+                    boxShadow: "0 8px 24px hsl(220 40% 2% / 0.18)",
                   }}
+                  itemStyle={{ color: "hsl(var(--foreground))" }}
+                  labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 600 }}
                 />
               </PieChart>
             </ResponsiveContainer>

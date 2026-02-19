@@ -24,6 +24,7 @@ import {
 import "@xyflow/react/dist/style.css"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { AppHeader } from "@/components/app-header"
+import { RenderProfiler } from "@/components/performance/render-profiler"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -763,8 +764,10 @@ function BoardCanvasPageInner() {
 
 export default function BoardCanvasPage() {
   return (
-    <ReactFlowProvider>
-      <BoardCanvasPageInner />
-    </ReactFlowProvider>
+    <RenderProfiler id="board-page">
+      <ReactFlowProvider>
+        <BoardCanvasPageInner />
+      </ReactFlowProvider>
+    </RenderProfiler>
   )
 }

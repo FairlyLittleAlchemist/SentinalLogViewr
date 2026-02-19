@@ -11,7 +11,6 @@ import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { EXPERIMENTAL_PLAYBOOKS_FLAG } from "@/lib/feature-flags"
 import { useAuth } from "@/components/auth/auth-provider"
 import { useTranslations } from "next-intl"
 
@@ -73,7 +72,6 @@ export default function PlaybooksPage() {
   const tp = useTranslations("playbooks")
   const { role } = useAuth()
   const canManage = role === "admin"
-  const [enabled, setEnabled] = useState(false)
   const [loading, setLoading] = useState(true)
   const [playbooks, setPlaybooks] = useState<Playbook[]>([])
   const [selectedId, setSelectedId] = useState<string>("")
@@ -96,18 +94,10 @@ export default function PlaybooksPage() {
 
   const loadData = async () => {
     setLoading(true)
-    const [flagsRes, playbooksRes, metricsRes] = await Promise.all([
-      fetch("/api/feature-flags", { cache: "no-store" }).catch(() => null),
+    const [playbooksRes, metricsRes] = await Promise.all([
       fetch("/api/playbooks", { cache: "no-store" }).catch(() => null),
       fetch("/api/metrics/soc", { cache: "no-store" }).catch(() => null),
     ])
-
-    if (flagsRes?.ok) {
-      const flagsPayload = await flagsRes.json() as { flags?: Array<{ key: string; enabled: boolean }> }
-      setEnabled(Boolean(flagsPayload.flags?.some((flag) => flag.key === EXPERIMENTAL_PLAYBOOKS_FLAG && flag.enabled)))
-    } else {
-      setEnabled(false)
-    }
 
     if (playbooksRes?.ok) {
       const payload = await playbooksRes.json() as { playbooks?: Playbook[] }
@@ -214,15 +204,6 @@ export default function PlaybooksPage() {
 
   if (loading) {
     return <DashboardLayout><AppHeader title={t("playbooks")} /><div className="p-6 text-sm text-muted-foreground">{tp("loading")}</div></DashboardLayout>
-  }
-
-  if (!enabled) {
-    return (
-      <DashboardLayout>
-        <AppHeader title={t("playbooks")} />
-        <div className="p-6 text-sm text-muted-foreground">{tp("disabled")}</div>
-      </DashboardLayout>
-    )
   }
 
   return (
