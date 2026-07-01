@@ -1,8 +1,9 @@
 "use client"
 
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ChevronLeft, ChevronRight, LogOut, Shield } from "lucide-react"
+import { ChevronLeft, ChevronRight, LogOut } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useMemo, useState } from "react"
 import { Button } from "@/components/ui/button"
@@ -37,16 +38,8 @@ export function AppSidebar() {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex items-center gap-3 border-b border-sidebar-border/70 px-4 py-5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary">
-          <Shield className="h-4 w-4 text-primary-foreground" />
-        </div>
-        {!collapsed && (
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold text-foreground">{t("app.name")}</span>
-            <span className="text-xs text-muted-foreground">{t("app.subtitle")}</span>
-          </div>
-        )}
+      <div className="flex items-center justify-center border-b border-sidebar-border/70 px-4 py-5">
+        <Image src="/teamwill_logo.jpg" alt="Teamwill" width={collapsed ? 40 : 160} height={collapsed ? 40 : 50} className={cn("shrink-0 object-contain", collapsed ? "h-10 w-10" : "h-12 w-40")} />
       </div>
 
       <nav className="flex-1 px-2 py-4">

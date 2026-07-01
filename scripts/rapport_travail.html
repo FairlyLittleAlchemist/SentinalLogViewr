@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Rapport de Travail - XGBoost & Dashboard Integration</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; background: #f5f7fa; color: #212121; font-size: 13px; }
+
+  .header {
+    background: linear-gradient(135deg, #0D47A1, #1565C0);
+    color: white;
+    padding: 40px 48px;
+  }
+  .header h1 { font-size: 24px; font-weight: 700; }
+  .header .sub { font-size: 13px; opacity: 0.85; margin-top: 6px; }
+  .header .meta { font-size: 11px; opacity: 0.65; margin-top: 4px; }
+
+  .content { max-width: 900px; margin: 0 auto; padding: 36px 24px; }
+
+  /* step card */
+  .step {
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,.07);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .step-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    border-bottom: 1px solid #ECEFF1;
+  }
+  .step-num {
+    background: #1565C0;
+    color: white;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .step-title { font-size: 15px; font-weight: 600; color: #0D47A1; }
+  .step-body { padding: 16px 20px; line-height: 1.7; }
+  .step-body p { margin-bottom: 8px; color: #37474F; }
+  .step-body ul { padding-left: 20px; margin-bottom: 8px; }
+  .step-body ul li { margin-bottom: 4px; color: #37474F; }
+
+  /* result boxes */
+  .result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 12px 0; }
+  .result-box {
+    background: #E3F2FD;
+    border-radius: 8px;
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .result-box .val { font-size: 22px; font-weight: 700; color: #1565C0; }
+  .result-box .lbl { font-size: 10px; color: #78909C; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px; }
+
+  /* class table */
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th { background: #1565C0; color: white; padding: 9px 12px; font-size: 12px; text-align: left; }
+  td { padding: 8px 12px; font-size: 12px; border-bottom: 1px solid #ECEFF1; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #F5F7FA; }
+
+  /* code */
+  code {
+    background: #263238;
+    color: #80CBC4;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: 'Consolas', monospace;
+  }
+  pre {
+    background: #263238;
+    color: #ECEFF1;
+    padding: 14px 16px;
+    border-radius: 8px;
+    font-size: 11.5px;
+    font-family: 'Consolas', monospace;
+    line-height: 1.6;
+    overflow-x: auto;
+    margin: 10px 0;
+  }
+
+  /* badge */
+  .badge {
+    display: inline-block;
+    padding: 2px 9px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+    margin-right: 4px;
+  }
+  .badge-blue  { background: #E3F2FD; color: #1565C0; border: 1px solid #90CAF9; }
+  .badge-green { background: #E8F5E9; color: #2E7D32; border: 1px solid #A5D6A7; }
+  .badge-red   { background: #FFEBEE; color: #C62828; border: 1px solid #EF9A9A; }
+  .badge-orange{ background: #FFF3E0; color: #E65100; border: 1px solid #FFCC80; }
+
+  /* verdict */
+  .verdict {
+    background: #FFF3E0;
+    border-left: 4px solid #E65100;
+    border-radius: 0 8px 8px 0;
+    padding: 14px 16px;
+    margin: 12px 0;
+  }
+  .verdict strong { color: #E65100; }
+
+  /* architecture */
+  .arch {
+    background: #F5F7FA;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    font-family: 'Consolas', monospace;
+    font-size: 11px;
+    color: #37474F;
+    line-height: 1.8;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 24px;
+    color: #90A4AE;
+    font-size: 11px;
+    margin-top: 8px;
+    border-top: 1px solid #ECEFF1;
+  }
+
+  @media print {
+    body { background: white; }
+    .step { box-shadow: none; border: 1px solid #ECEFF1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Rapport de Travail &mdash; Classification XGBoost &amp; Integration Dashboard</h1>
+  <div class="sub">Projet : Sentinel Log Viewer &nbsp;|&nbsp; Classification des incidents de securite</div>
+  <div class="meta">Dataset : Incident.csv (Microsoft Sentinel) &nbsp;|&nbsp; Date : 07/06/2026</div>
+</div>
+
+<div class="content">
+
+  <!-- ETAPE 1 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">1</div>
+      <div class="step-title">Analyse du notebook de reference</div>
+    </div>
+    <div class="step-body">
+      <p>Lecture et comprehension du notebook <code>microsoft-security-incident.ipynb</code> fourni comme reference methodologique.</p>
+      <ul>
+        <li>Dataset source : <strong>GUIDE_Train.csv / GUIDE_Test.csv</strong> (Microsoft Kaggle, 9.5 millions de lignes)</li>
+        <li>Objectif : predire le <strong>triage d'incident</strong> en 3 classes : TruePositive, BenignPositive, FalsePositive</li>
+        <li>Pipeline : nettoyage &rarr; encodage &rarr; XGBoost avec K-Fold Cross Validation</li>
+        <li>Meilleurs hyperparametres identifies : <code>max_depth=15, n_estimators=200, lr=0.3</code></li>
+        <li>Performances originales : <strong>Accuracy 93.7%</strong>, AUC-ROC 0.99 sur 4.1M de lignes de test</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ETAPE 2 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">2</div>
+      <div class="step-title">Exploration et preparation du dataset local</div>
+    </div>
+    <div class="step-body">
+      <p>Analyse du fichier <code>Incident.csv</code> issu de l'environnement Microsoft Sentinel.</p>
+      <ul>
+        <li><strong>2 363 lignes</strong> au total, 31 colonnes</li>
+        <li>871 incidents classes (Classification non nulle) &rarr; filtre sur TP / BP / FP</li>
+        <li>107 lignes "Undetermined" exclues &rarr; <strong>764 echantillons</strong> utilisables</li>
+        <li>Distribution des classes : BenignPositive 528 &bull; FalsePositive 205 &bull; TruePositive 31</li>
+        <li>Features disponibles : Severity, ProviderName, SourceSystem, ModifiedBy, timestamps, AlertIds, Title...</li>
+      </ul>
+      <div class="verdict">
+        <strong>Desequilibre de classes identifie :</strong> TruePositive tres minoritaire (4% des donnees). Risque de biais du modele.
+      </div>
+    </div>
+  </div>
+
+  <!-- ETAPE 3 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">3</div>
+      <div class="step-title">Creation du script de benchmarking XGBoost</div>
+    </div>
+    <div class="step-body">
+      <p>Fichier cree : <code>scripts/xgboost_benchmark.py</code></p>
+      <ul>
+        <li>18 features ingenierees : encodage categoriel, durees, features temporelles, comptages, longueur du titre</li>
+        <li>Memes hyperparametres que le notebook de reference</li>
+        <li>Split 80/20 stratifie + 5-Fold Cross Validation</li>
+        <li>Metriques calculees : Accuracy, Log-Loss, Confusion Matrix, Classification Report, AUC-ROC</li>
+        <li>Sauvegarde du modele + encodeurs dans <code>scripts/xgboost_incident_model.pkl</code></li>
+      </ul>
+      <pre>python -X utf8 scripts/xgboost_benchmark.py</pre>
+    </div>
+  </div>
+
+  <!-- ETAPE 4 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">4</div>
+      <div class="step-title">Resultats du benchmark</div>
+    </div>
+    <div class="step-body">
+      <div class="result-grid">
+        <div class="result-box"><div class="val">88.89%</div><div class="lbl">Test Accuracy</div></div>
+        <div class="result-box"><div class="val">100%</div><div class="lbl">Train Accuracy</div></div>
+        <div class="result-box"><div class="val">0.926</div><div class="lbl">Macro AUC-ROC</div></div>
+        <div class="result-box"><div class="val">0.865</div><div class="lbl">CV Accuracy (5-Fold)</div></div>
+        <div class="result-box"><div class="val">0.394</div><div class="lbl">Test Log-Loss</div></div>
+        <div class="result-box"><div class="val">153</div><div class="lbl">Echantillons test</div></div>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Classe</th><th>Precision</th><th>Rappel</th><th>F1-Score</th><th>Support</th><th>AUC-ROC</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><span class="badge badge-blue">BenignPositive</span></td><td>0.90</td><td>0.94</td><td>0.92</td><td>106</td><td>0.9518</td></tr>
+          <tr><td><span class="badge badge-orange">FalsePositive</span></td><td>0.85</td><td>0.80</td><td>0.82</td><td>41</td><td>0.9582</td></tr>
+          <tr><td><span class="badge badge-red">TruePositive</span></td><td>1.00</td><td>0.50</td><td>0.67</td><td>6</td><td>0.8685</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ETAPE 5 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">5</div>
+      <div class="step-title">Generation du rapport de classification HTML</div>
+    </div>
+    <div class="step-body">
+      <p>Fichier cree : <code>scripts/classification_report_gen.py</code></p>
+      <p>Rapport genere : <code>scripts/classification_report.html</code></p>
+      <ul>
+        <li>Metriques avancees : Balanced Accuracy (74.94%), Cohen's Kappa (0.74), MCC (0.74)</li>
+        <li>Visualisations : Matrice de confusion brute et normalisee, Courbes ROC, Courbes Precision-Rappel</li>
+        <li>Distribution des probabilites predites par classe</li>
+        <li>Importance des features XGBoost</li>
+        <li>Rapport brut sklearn inclus dans la page</li>
+      </ul>
+      <pre>python -X utf8 scripts/classification_report_gen.py</pre>
+    </div>
+  </div>
+
+  <!-- ETAPE 6 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">6</div>
+      <div class="step-title">Analyse de la fiabilite du modele</div>
+    </div>
+    <div class="step-body">
+      <p>Evaluation critique des performances pour un usage en production SOC :</p>
+
+      <p><strong>Points positifs :</strong></p>
+      <ul>
+        <li>AUC-ROC macro = 0.926 &rarr; bonne discrimination globale</li>
+        <li>BenignPositive F1 = 0.92 &rarr; classe majoritaire bien apprise</li>
+        <li>CV stable : 0.865 &plusmn; 0.017</li>
+      </ul>
+
+      <p><strong>Problemes identifies :</strong></p>
+      <ul>
+        <li><strong>Overfitting</strong> : Train 100% vs Test 89% &rarr; max_depth=15 trop profond pour 611 echantillons</li>
+        <li><strong>TruePositive recall = 50%</strong> &rarr; le modele rate 1 vrai incident sur 2 (inacceptable en SOC)</li>
+        <li><strong>Dataset trop petit</strong> : 764 echantillons vs 9.5M dans le notebook original</li>
+        <li><strong>Desequilibre de classes</strong> : seulement 31 TruePositive</li>
+      </ul>
+
+      <div class="verdict">
+        <strong>Verdict :</strong> Modele utilisable pour le pre-filtrage BP/FP avec supervision humaine.
+        Non recommande pour la detection automatique de TruePositive en production sans correction du desequilibre.
+      </div>
+
+      <p><strong>Pistes d'amelioration :</strong></p>
+      <ul>
+        <li>Reduire <code>max_depth</code> a 4-6 pour eviter l'overfitting</li>
+        <li>Utiliser <code>scale_pos_weight</code> ou SMOTE pour equilibrer les classes</li>
+        <li>Enrichir le dataset avec plus de TruePositive</li>
+        <li>Ajouter des features securite (MITRE techniques, type d'entite)</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ETAPE 7 -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">7</div>
+      <div class="step-title">Integration dans le Dashboard Sentinel</div>
+    </div>
+    <div class="step-body">
+      <p>Integration end-to-end du modele XGBoost dans l'interface web du Sentinel Log Viewer.</p>
+
+      <p><strong>Architecture mise en place :</strong></p>
+      <div class="arch">
+Alerts Page (Next.js)
+    &darr;  fetchMlGrades(alerts)  [parallele pour chaque incident]
+/api/incident-grade (Next.js route.ts)
+    &darr;  POST /predict
+ML Server FastAPI  :8004  (scripts/ml_server.py)
+    &darr;  charge le modele pkl
+XGBoost Model  &rarr;  { label, confidence, probabilities }
+    &uarr;
+Badge ML affiche sur chaque carte d'incident
+      </div>
+
+      <p><strong>Fichiers crees / modifies :</strong></p>
+      <table>
+        <thead><tr><th>Fichier</th><th>Action</th><th>Description</th></tr></thead>
+        <tbody>
+          <tr><td><code>scripts/xgboost_benchmark.py</code></td><td><span class="badge badge-orange">Modifie</span></td><td>Sauvegarde des encodeurs categoriels dans le pkl</td></tr>
+          <tr><td><code>scripts/xgboost_incident_model.pkl</code></td><td><span class="badge badge-orange">Regenere</span></td><td>Modele + label_encoder + cat_encoders + features</td></tr>
+          <tr><td><code>scripts/ml_server.py</code></td><td><span class="badge badge-green">Cree</span></td><td>FastAPI port 8004, endpoint POST /predict</td></tr>
+          <tr><td><code>app/alerts/page.tsx</code></td><td><span class="badge badge-orange">Modifie</span></td><td>Badge ML sur chaque carte, appel fetchMlGrades</td></tr>
+        </tbody>
+      </table>
+
+      <p><strong>Badge ML affiche sur chaque incident :</strong></p>
+      <ul>
+        <li><span class="badge badge-red">True +</span> — vrai incident (rouge) + % confiance</li>
+        <li><span class="badge badge-green">Benign +</span> — incident benin (vert) + % confiance</li>
+        <li><span class="badge badge-blue">False +</span> — fausse alerte (bleu) + % confiance</li>
+        <li>Icone Brain animee pendant le chargement</li>
+      </ul>
+
+      <p><strong>Demarrage du serveur ML :</strong></p>
+      <pre>python scripts/ml_server.py
+# Serveur disponible sur http://127.0.0.1:8004</pre>
+    </div>
+  </div>
+
+  <!-- RECAPITULATIF FICHIERS -->
+  <div class="step">
+    <div class="step-header">
+      <div class="step-num">&#10003;</div>
+      <div class="step-title">Recapitulatif des fichiers produits</div>
+    </div>
+    <div class="step-body">
+      <table>
+        <thead><tr><th>Fichier</th><th>Type</th><th>Role</th></tr></thead>
+        <tbody>
+          <tr><td><code>scripts/xgboost_benchmark.py</code></td><td>Python</td><td>Entrainement + evaluation du modele XGBoost</td></tr>
+          <tr><td><code>scripts/classification_report_gen.py</code></td><td>Python</td><td>Generation du rapport HTML de classification</td></tr>
+          <tr><td><code>scripts/ml_server.py</code></td><td>Python / FastAPI</td><td>Serveur d'inference XGBoost (port 8004)</td></tr>
+          <tr><td><code>scripts/xgboost_incident_model.pkl</code></td><td>Modele</td><td>Modele entraine + encodeurs serialises</td></tr>
+          <tr><td><code>scripts/xgboost_benchmark_results.png</code></td><td>Image</td><td>Graphiques du benchmark (CM, importance, CV)</td></tr>
+          <tr><td><code>scripts/classification_report.html</code></td><td>HTML</td><td>Rapport complet de classification avec graphiques</td></tr>
+          <tr><td><code>app/alerts/page.tsx</code></td><td>TypeScript / React</td><td>Page alerts avec integration badge ML</td></tr>
+          <tr><td><code>app/api/incident-grade/route.ts</code></td><td>Next.js API</td><td>Proxy vers le serveur ML Python</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="footer">
+  Sentinel Log Viewer &mdash; Session de travail du 07/06/2026 &mdash;
+  Pour imprimer en PDF : Ctrl+P &rarr; Enregistrer en PDF
+</div>
+
+</body>
+</html>

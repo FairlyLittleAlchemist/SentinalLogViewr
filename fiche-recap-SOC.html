@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Fiche Récap — Classification & Scoring SOC</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #1e40af;
+      --blue-l:  #dbeafe;
+      --blue-m:  #3b82f6;
+      --green:   #065f46;
+      --green-l: #d1fae5;
+      --green-m: #10b981;
+      --purple:  #5b21b6;
+      --purple-l:#ede9fe;
+      --purple-m:#8b5cf6;
+      --red:     #991b1b;
+      --red-l:   #fee2e2;
+      --orange:  #92400e;
+      --orange-l:#fef3c7;
+      --slate:   #0f172a;
+      --slate2:  #1e293b;
+      --slate3:  #334155;
+      --slate4:  #475569;
+      --slate5:  #94a3b8;
+      --slate6:  #f1f5f9;
+      --white:   #ffffff;
+    }
+
+    body { font-family: 'Inter', sans-serif; background: #f8fafc; color: var(--slate); font-size: 13px; line-height: 1.6; }
+
+    .page { max-width: 900px; margin: 0 auto; padding: 40px 40px 60px; background: var(--white); }
+
+    .header { background: linear-gradient(135deg, var(--slate) 0%, var(--slate2) 100%); color: white; border-radius: 16px; padding: 32px 36px; margin-bottom: 32px; position: relative; overflow: hidden; }
+    .header::before { content: ''; position: absolute; top: -40px; right: -40px; width: 180px; height: 180px; border-radius: 50%; background: rgba(59,130,246,0.15); }
+    .header-tag { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.2); border-radius: 100px; padding: 4px 12px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 14px; color: #93c5fd; }
+    .header h1 { font-size: 26px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 6px; }
+    .header p { color: #94a3b8; font-size: 13px; }
+    .header-meta { display: flex; gap: 20px; margin-top: 18px; flex-wrap: wrap; }
+    .header-meta span { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #cbd5e1; font-weight: 500; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+
+    .pipeline-box { background: var(--slate6); border: 1px solid #e2e8f0; border-radius: 14px; padding: 24px 28px; margin-bottom: 32px; }
+    .pipeline-box h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--slate4); margin-bottom: 18px; }
+    .pipeline { display: flex; align-items: center; gap: 0; flex-wrap: wrap; }
+    .pipeline-step { background: white; border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; text-align: center; min-width: 120px; }
+    .pipeline-step .step-icon { font-size: 20px; margin-bottom: 4px; }
+    .pipeline-step .step-title { font-size: 12px; font-weight: 700; color: var(--slate); }
+    .pipeline-step .step-sub { font-size: 10px; color: var(--slate4); margin-top: 2px; }
+    .pipeline-arrow { font-size: 20px; color: var(--slate5); padding: 0 8px; flex-shrink: 0; }
+    .pipeline-step.hl-blue   { border-color: var(--blue-m);   background: var(--blue-l); }
+    .pipeline-step.hl-purple { border-color: var(--purple-m); background: var(--purple-l); }
+    .pipeline-step.hl-green  { border-color: var(--green-m);  background: var(--green-l); }
+
+    .section { border: 1.5px solid #e2e8f0; border-radius: 16px; overflow: hidden; margin-bottom: 28px; }
+    .section-header { display: flex; align-items: center; gap: 14px; padding: 18px 24px; border-bottom: 1px solid #e2e8f0; }
+    .section-header.blue   { background: var(--blue-l);   border-color: #bfdbfe; }
+    .section-header.purple { background: var(--purple-l); border-color: #ddd6fe; }
+    .section-header.dark   { background: #f8fafc; }
+    .section-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+    .icon-blue   { background: var(--blue-m); }
+    .icon-purple { background: var(--purple-m); }
+    .icon-dark   { background: var(--slate); }
+    .section-header-text h2 { font-size: 16px; font-weight: 800; }
+    .section-header-text p { font-size: 12px; color: var(--slate4); margin-top: 1px; }
+    .badge { margin-left: auto; padding: 4px 10px; border-radius: 100px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+    .badge-blue   { background: #1d4ed8; color: white; }
+    .badge-purple { background: #7c3aed; color: white; }
+
+    .section-body { padding: 20px 24px; }
+
+    .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .info-card { background: var(--slate6); border-radius: 10px; padding: 14px 16px; }
+    .info-card label { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--slate4); margin-bottom: 4px; }
+    .info-card p { font-size: 13px; font-weight: 600; color: var(--slate); }
+    .info-card code { font-family: 'JetBrains Mono', monospace; font-size: 12px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    thead tr { background: var(--slate6); }
+    th { text-align: left; padding: 9px 12px; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--slate4); border-bottom: 1.5px solid #e2e8f0; }
+    td { padding: 9px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 100px; font-size: 10.5px; font-weight: 700; }
+    .chip-blue   { background: var(--blue-l);   color: var(--blue); }
+    .chip-purple { background: var(--purple-l); color: var(--purple); }
+    .chip-green  { background: var(--green-l);  color: var(--green); }
+    .chip-red    { background: var(--red-l);    color: var(--red); }
+    .chip-orange { background: var(--orange-l); color: var(--orange); }
+    .chip-slate  { background: #e2e8f0; color: var(--slate3); }
+
+    .logic-flow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; background: var(--slate); color: white; border-radius: 10px; padding: 12px 16px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; margin-bottom: 20px; }
+    .lf-step { color: #86efac; font-weight: 600; }
+    .lf-arrow { color: #94a3b8; }
+    .lf-fallback { color: #fbbf24; }
+
+    .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .score-card { border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
+    .score-card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .score-card-title { font-size: 12px; font-weight: 700; color: var(--slate2); }
+    .score-max { font-size: 13px; font-weight: 800; color: var(--purple); }
+    .score-bar { height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 3px; }
+    .fill-30  { width: 30%; background: var(--blue-m); }
+    .fill-30p { width: 30%; background: var(--purple-m); }
+    .fill-20  { width: 20%; background: var(--green-m); }
+    .fill-20y { width: 20%; background: #f59e0b; }
+    .score-card p { font-size: 11px; color: var(--slate4); margin-top: 6px; line-height: 1.5; }
+
+    .levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .level-card { border-radius: 10px; padding: 12px 14px; text-align: center; }
+    .level-score { font-size: 15px; font-weight: 800; margin-bottom: 2px; }
+    .level-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
+    .level-low    { background: var(--green-l);  color: var(--green); }
+    .level-medium { background: var(--orange-l); color: var(--orange); }
+    .level-high   { background: var(--red-l);    color: var(--red); }
+    .level-crit   { background: #1e1b4b; color: #a5b4fc; }
+
+    .llm-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+    .llm-step { display: flex; flex-direction: column; align-items: center; background: var(--slate6); border: 1.5px solid #e2e8f0; border-radius: 10px; padding: 10px 14px; min-width: 100px; text-align: center; }
+    .llm-step.primary { border-color: var(--purple-m); background: var(--purple-l); }
+    .llm-provider { font-size: 10px; font-weight: 700; color: var(--slate4); text-transform: uppercase; letter-spacing: 0.06em; }
+    .llm-model { font-size: 11px; font-weight: 600; color: var(--slate); margin-top: 2px; }
+    .llm-arrow { color: var(--slate5); font-size: 16px; }
+
+    .tests-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 20px; }
+    .test-card { border-radius: 10px; padding: 14px; text-align: center; border: 1.5px solid var(--green-m); background: var(--green-l); }
+    .test-score { font-size: 22px; font-weight: 800; color: var(--green); }
+    .test-label { font-size: 11px; color: var(--green); font-weight: 600; margin-top: 2px; }
+
+    .io-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+    .io-box { background: var(--slate); color: #e2e8f0; border-radius: 10px; padding: 14px 16px; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.8; }
+    .io-label { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 8px; }
+    .key { color: #93c5fd; }
+    .val { color: #86efac; }
+    .comment { color: #475569; }
+
+    .comparison thead tr { background: var(--slate); }
+    .comparison th { color: #94a3b8; }
+    .comparison td:first-child { font-weight: 600; color: var(--slate2); }
+
+    h3 { font-size: 13px; font-weight: 700; color: var(--slate2); margin: 18px 0 10px; }
+    code { font-family: 'JetBrains Mono', monospace; font-size: 11px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; }
+
+    @media print {
+      body { background: white; }
+      .page { padding: 20px; max-width: 100%; }
+      .section, .pipeline-box, .score-grid, .levels, .info-grid, .tests-grid { break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .header, .llm-chain, .logic-flow, .io-box { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="header-tag">📋 Fiche Technique</div>
+    <h1>Classification &amp; Scoring SOC</h1>
+    <p>Microsoft Sentinel — Pipeline de traitement automatisé des incidents de sécurité</p>
+    <div class="header-meta">
+      <span><span class="dot" style="background:#3b82f6"></span> SentinelClassifiy — Port 8001</span>
+      <span><span class="dot" style="background:#8b5cf6"></span> SOC-RiskScorer — Port 8002</span>
+      <span><span class="dot" style="background:#10b981"></span> MITRE ATT&amp;CK v14</span>
+      <span><span class="dot" style="background:#f59e0b"></span> LLM Multi-Provider</span>
+    </div>
+  </div>
+
+  <div class="pipeline-box">
+    <h2>🔄 Pipeline SOC — Vue d'ensemble</h2>
+    <div class="pipeline">
+      <div class="pipeline-step">
+        <div class="step-icon">🛡️</div>
+        <div class="step-title">Alerte Sentinel</div>
+        <div class="step-sub">Microsoft Sentinel</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step hl-blue">
+        <div class="step-icon">🏷️</div>
+        <div class="step-title">Classification</div>
+        <div class="step-sub">SentinelClassifiy :8001</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step hl-purple">
+        <div class="step-icon">📊</div>
+        <div class="step-title">Scoring</div>
+        <div class="step-sub">SOC-RiskScorer :8002</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step hl-green">
+        <div class="step-icon">🗄️</div>
+        <div class="step-title">incident_analysis</div>
+        <div class="step-sub">Supabase DB</div>
+      </div>
+      <div class="pipeline-arrow">→</div>
+      <div class="pipeline-step">
+        <div class="step-icon">🖥️</div>
+        <div class="step-title">Dashboard SOC</div>
+        <div class="step-sub">Analyste :3000</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SENTINELCLASSIFY -->
+  <div class="section">
+    <div class="section-header blue">
+      <div class="section-icon icon-blue">🏷️</div>
+      <div class="section-header-text">
+        <h2 style="color:var(--blue)">SentinelClassifiy</h2>
+        <p>Classificateur d'incidents basé sur MITRE ATT&amp;CK v14 — Déterministe, ~10ms</p>
+      </div>
+      <div class="badge badge-blue">PORT :8001</div>
+    </div>
+    <div class="section-body">
+
+      <div class="info-grid">
+        <div class="info-card"><label>Emplacement</label><p><code>Desktop\SentinelClassifiy</code></p></div>
+        <div class="info-card"><label>Technologie</label><p>Python · FastAPI · Pydantic · Uvicorn</p></div>
+        <div class="info-card"><label>Type de décision</label><p>Déterministe — règles MITRE</p></div>
+        <div class="info-card"><label>Base de connaissance</label><p>188 techniques + 13 tactiques MITRE ATT&amp;CK v14</p></div>
+      </div>
+
+      <h3>Logique de classification — Priorité décroissante</h3>
+      <div class="logic-flow">
+        <span class="lf-step">TECHNIQUE (T1059…)</span>
+        <span class="lf-arrow">→</span>
+        <span class="lf-step">TACTIQUE</span>
+        <span class="lf-arrow">→</span>
+        <span class="lf-fallback">REGEX MOTS-CLÉS</span>
+        <span class="lf-arrow">→</span>
+        <span class="lf-fallback">FALLBACK (Accès non autorisé)</span>
+      </div>
+
+      <h3>5 catégories de sortie + mapping MITRE</h3>
+      <table>
+        <thead><tr><th>Catégorie</th><th>Techniques MITRE clés</th><th>Confiance</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip chip-red">Malware</span></td><td>T1059 (scripts), T1055 (injection proc.), T1486 (ransomware), T1071 (C2), T1547 (persistance)</td><td><span class="chip chip-green">HIGH</span></td></tr>
+          <tr><td><span class="chip chip-orange">Phishing</span></td><td>T1566, T1598 (phishing info), T1111 (interception MFA)</td><td><span class="chip chip-green">HIGH</span></td></tr>
+          <tr><td><span class="chip chip-blue">Brute Force</span></td><td>T1110 (variantes guessing/spraying/stuffing), T1621 (MFA fatigue)</td><td><span class="chip chip-green">HIGH</span></td></tr>
+          <tr><td><span class="chip chip-purple">Accès non autorisé</span></td><td>T1078 (comptes valides), T1548 (UAC bypass), T1558 (Kerberos), T1021 (services distants)</td><td><span class="chip chip-green">HIGH</span></td></tr>
+          <tr><td><span class="chip chip-slate">Exfiltration de données</span></td><td>T1020 (auto exfil), T1041 (C2 channel), T1048 (protocoles alt.), T1567 (web service)</td><td><span class="chip chip-green">HIGH</span></td></tr>
+        </tbody>
+      </table>
+
+      <h3>Format Entrée / Sortie</h3>
+      <div class="io-row">
+        <div class="io-box">
+          <div class="io-label">📥 Entrée — POST /classify</div>
+          <span class="key">alert_id</span>     <span class="comment">// optionnel</span><br>
+          <span class="key">tactics</span>      <span class="comment">// liste ou string MITRE</span><br>
+          <span class="key">techniques</span>   <span class="comment">// T-numbers (T1059…)</span><br>
+          <span class="key">title</span>        <span class="comment">// titre de l'alerte</span><br>
+          <span class="key">description</span>  <span class="comment">// contexte détaillé</span>
+        </div>
+        <div class="io-box">
+          <div class="io-label">📤 Sortie</div>
+          <span class="key">category</span>       <span class="val">"Malware"</span><br>
+          <span class="key">confidence</span>     <span class="val">"high"</span><br>
+          <span class="key">matched_on</span>     <span class="val">"technique"</span><br>
+          <span class="key">matched_values</span> <span class="val">["T1059"]</span><br>
+          <span class="key">description</span>   <span class="val">"Exécution de code…"</span>
+        </div>
+      </div>
+
+      <h3>Endpoints API</h3>
+      <table>
+        <thead><tr><th>Méthode</th><th>Endpoint</th><th>Usage</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip chip-green">POST</span></td><td><code>/classify</code></td><td>Entrée structurée (tactics, techniques, title)</td></tr>
+          <tr><td><span class="chip chip-green">POST</span></td><td><code>/classify/payload</code></td><td>Payload brut Sentinel (SecurityIncident)</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- SOC-RISKSCORER -->
+  <div class="section">
+    <div class="section-header purple">
+      <div class="section-icon icon-purple">📊</div>
+      <div class="section-header-text">
+        <h2 style="color:var(--purple)">SOC-RiskScorer</h2>
+        <p>Moteur de scoring LLM — Score 0–100 avec décomposition MITRE · Intégration n8n</p>
+      </div>
+      <div class="badge badge-purple">PORT :8002</div>
+    </div>
+    <div class="section-body">
+
+      <div class="info-grid">
+        <div class="info-card"><label>Emplacement</label><p><code>Desktop\SOC-RiskScorer</code></p></div>
+        <div class="info-card"><label>Technologie</label><p>Python · FastAPI · Pydantic · LLM multi-provider</p></div>
+        <div class="info-card"><label>Type de décision</label><p>LLM + Safety Net Guardrails (déterministes)</p></div>
+        <div class="info-card"><label>Intégration</label><p>n8n webhook — payload Microsoft Sentinel</p></div>
+      </div>
+
+      <h3>Décomposition du score (100 pts)</h3>
+      <div class="score-grid">
+        <div class="score-card">
+          <div class="score-card-header"><span class="score-card-title">⚡ Sévérité</span><span class="score-max">30 pts</span></div>
+          <div class="score-bar"><div class="score-bar-fill fill-30"></div></div>
+          <p>TIER1 (ransomware, C2, mass download) → ≥ 20 pts<br>Critical 25-30 · High 18-24 · Medium 10-17 · Low 3-9<br>Bonus cloud service (SharePoint, Azure…) → +3</p>
+        </div>
+        <div class="score-card">
+          <div class="score-card-header"><span class="score-card-title">🖥️ Criticité Actif</span><span class="score-max">30 pts</span></div>
+          <div class="score-bar"><div class="score-bar-fill fill-30p"></div></div>
+          <p>DC / PKI / SCADA / HSM → 25-30<br>Serveurs AD, email gateway, VPN → 16-24<br>Apps internes / BDD → 8-15 · Workstations → 2-7</p>
+        </div>
+        <div class="score-card">
+          <div class="score-card-header"><span class="score-card-title">📈 Fréquence &amp; Activité</span><span class="score-max">20 pts</span></div>
+          <div class="score-bar"><div class="score-bar-fill fill-20"></div></div>
+          <p>&gt;10 alertes → 17-20 · 5-10 alertes → 12-16<br>2-4 alertes → 7-11 · 1 alerte → 3-6<br>Statut Active/New → bonus +3</p>
+        </div>
+        <div class="score-card">
+          <div class="score-card-header"><span class="score-card-title">🎯 Contexte MITRE</span><span class="score-max">20 pts</span></div>
+          <div class="score-bar"><div class="score-bar-fill fill-20y"></div></div>
+          <p>Impact / Exfil / C&amp;C → +7 chacun<br>LateralMovement / CredentialAccess → +6<br>IP malicieuse confirmée → +4 · Géoloc risque → +2</p>
+        </div>
+      </div>
+
+      <h3>Niveaux de risque</h3>
+      <div class="levels">
+        <div class="level-card level-low"><div class="level-score">0 – 34</div><div class="level-label">🟢 LOW</div></div>
+        <div class="level-card level-medium"><div class="level-score">35 – 59</div><div class="level-label">🟡 MEDIUM</div></div>
+        <div class="level-card level-high"><div class="level-score">60 – 79</div><div class="level-label">🔴 HIGH</div></div>
+        <div class="level-card level-crit"><div class="level-score">80 – 100</div><div class="level-label">⚫ CRITICAL</div></div>
+      </div>
+
+      <h3>Chaîne LLM avec failover automatique (rate-limit 429)</h3>
+      <div class="llm-chain">
+        <div class="llm-step primary"><span class="llm-provider">🥇 Primaire — Groq</span><span class="llm-model">llama-3.3-70b</span></div>
+        <div class="llm-arrow">→</div>
+        <div class="llm-step"><span class="llm-provider">🔄 Fallback 1 — Groq</span><span class="llm-model">llama-3.1-8b</span></div>
+        <div class="llm-arrow">→</div>
+        <div class="llm-step"><span class="llm-provider">🔄 Fallback 2 — Gemini</span><span class="llm-model">2.5 Flash</span></div>
+        <div class="llm-arrow">→</div>
+        <div class="llm-step"><span class="llm-provider">🔄 Fallback 3 — Gemini</span><span class="llm-model">2.5 Flash Lite</span></div>
+      </div>
+
+      <h3>Safety Net Guardrails — après l'appel LLM</h3>
+      <table>
+        <thead><tr><th>Garde-fou</th><th>Condition déclenchante</th><th>Effet</th></tr></thead>
+        <tbody>
+          <tr><td>Plancher sévérité</td><td>Mots-clés TIER1/TIER2 + champ severity</td><td>Score sévérité ≥ plancher calculé</td></tr>
+          <tr><td>Plancher actif</td><td>asset_criticality explicite ou pattern hostname</td><td>Score actif ≥ plancher par type d'actif</td></tr>
+          <tr><td>Plancher fréquence</td><td>alerts_count + statut Active/New</td><td>Score fréquence ≥ plancher par bucket</td></tr>
+          <tr><td>Plancher tactique critique</td><td>Exfil / C&amp;C / LateralMovement / CredentialAccess</td><td>Score total ≥ 35 (sauf FalsePositive)</td></tr>
+          <tr><td>Ajustement classification</td><td>TruePositive / FalsePositive / BenignPositive</td><td>+5 / -10 / -5 (plancher 10 si tactique critique)</td></tr>
+        </tbody>
+      </table>
+
+      <h3>Format Entrée / Sortie</h3>
+      <div class="io-row">
+        <div class="io-box">
+          <div class="io-label">📥 Entrée — POST /score (n8n)</div>
+          <span class="key">title</span>              <span class="comment">// titre incident</span><br>
+          <span class="key">severity</span>           <span class="comment">// High/Medium/Low/Info</span><br>
+          <span class="key">status</span>             <span class="comment">// New/Active/Closed</span><br>
+          <span class="key">tactics</span>            <span class="comment">// liste MITRE</span><br>
+          <span class="key">techniques</span>         <span class="comment">// T-numbers</span><br>
+          <span class="key">asset_criticality</span>  <span class="comment">// optionnel</span><br>
+          <span class="key">alerts_count</span>       <span class="comment">// fréquence</span>
+        </div>
+        <div class="io-box">
+          <div class="io-label">📤 Sortie</div>
+          <span class="key">risk_score</span>        <span class="val">78</span><br>
+          <span class="key">risk_level</span>        <span class="val">"High"</span><br>
+          <span class="key">score_breakdown</span>   <span class="val">{sev, asset, freq, ctx}</span><br>
+          <span class="key">key_risk_factors</span>  <span class="val">["...", "..."]</span><br>
+          <span class="key">recommendation</span>    <span class="val">"étapes remédiation…"</span><br>
+          <span class="key">mitre_analysis</span>    <span class="val">"analyse tactiques…"</span><br>
+          <span class="key">confidence</span>        <span class="val">0.85</span>
+        </div>
+      </div>
+
+      <h3>Résultats des tests — Validation QA</h3>
+      <div class="tests-grid">
+        <div class="test-card"><div class="test-score">49/49</div><div class="test-label">Tests unitaires (pure logique)</div></div>
+        <div class="test-card"><div class="test-score">20/20</div><div class="test-label">Tests complets live (tous tactiques MITRE)</div></div>
+        <div class="test-card"><div class="test-score">15</div><div class="test-label">Défauts corrigés (FINAL_REPORT.md)</div></div>
+      </div>
+
+      <h3>Endpoints API</h3>
+      <table>
+        <thead><tr><th>Méthode</th><th>Endpoint</th><th>Usage</th></tr></thead>
+        <tbody>
+          <tr><td><span class="chip chip-blue">GET</span></td><td><code>/health</code></td><td>Statut providers LLM + chaîne fallback</td></tr>
+          <tr><td><span class="chip chip-green">POST</span></td><td><code>/score</code></td><td>Scorer un incident (intégration n8n principale)</td></tr>
+          <tr><td><span class="chip chip-green">POST</span></td><td><code>/score/batch</code></td><td>Scorer plusieurs incidents en lot</td></tr>
+          <tr><td><span class="chip chip-green">POST</span></td><td><code>/webhook/n8n</code></td><td>Payload brut Sentinel flexible (tous formats)</td></tr>
+        </tbody>
+      </table>
+
+    </div>
+  </div>
+
+  <!-- COMPARISON -->
+  <div class="section">
+    <div class="section-header dark">
+      <div class="section-icon icon-dark">⚖️</div>
+      <div class="section-header-text">
+        <h2 style="color:var(--slate)">Comparaison des deux composants</h2>
+        <p>Positionnement dans la chaîne de traitement SOC</p>
+      </div>
+    </div>
+    <div class="section-body">
+      <table class="comparison">
+        <thead><tr><th>Aspect</th><th>🏷️ SentinelClassifiy</th><th>📊 SOC-RiskScorer</th></tr></thead>
+        <tbody>
+          <tr><td>Question répondue</td><td><b>QUOI</b> — type de menace</td><td><b>QUEL RISQUE</b> — priorité 0-100</td></tr>
+          <tr><td>Type de moteur</td><td><span class="chip chip-blue">Déterministe</span></td><td><span class="chip chip-purple">LLM + Guardrails</span></td></tr>
+          <tr><td>Sortie principale</td><td>5 catégories + confidence level</td><td>Score 0-100 + décomposition 4 axes</td></tr>
+          <tr><td>Base de connaissance</td><td>MITRE ATT&amp;CK v14 (188 techniques)</td><td>MITRE + few-shots + prompt engineering</td></tr>
+          <tr><td>Temps de réponse</td><td>~10ms (règles)</td><td>~2-5s (appel LLM)</td></tr>
+          <tr><td>Reproductibilité</td><td>100% déterministe</td><td>Variable LLM + stable guardrails</td></tr>
+          <tr><td>Port</td><td>:8001</td><td>:8002</td></tr>
+          <tr><td>Tests validés</td><td>—</td><td>49/49 unitaires + 20/20 live PASS</td></tr>
+          <tr><td>Intégration</td><td>Appel API direct</td><td>n8n webhook Sentinel</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div style="text-align:center; padding:20px 0 0; color:#94a3b8; font-size:11px; border-top:1px solid #e2e8f0; margin-top:8px;">
+    Fiche Technique · SentinelClassifiy + SOC-RiskScorer · MITRE ATT&amp;CK v14 · Mai 2026
+  </div>
+
+</div>
+
+<script>
+  // Bouton d'impression
+  const btn = document.createElement('button');
+  btn.textContent = '🖨️ Imprimer / Sauvegarder en PDF';
+  btn.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#0f172a;color:white;border:none;border-radius:10px;padding:12px 20px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,0.3);z-index:999;';
+  btn.onclick = () => window.print();
+  document.body.appendChild(btn);
+</script>
+</body>
+</html>

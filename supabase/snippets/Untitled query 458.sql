@@ -1,0 +1,2 @@
+ALTER TABLE alert_classifications 
+DROP CONSTRAINT alert_classifications_alert_id_fkey;

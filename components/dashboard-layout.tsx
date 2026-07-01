@@ -1,7 +1,6 @@
 "use client"
 
 import React from "react"
-
 import { AppSidebar } from "@/components/app-sidebar"
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -10,7 +9,12 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <div className="hidden lg:block">
         <AppSidebar />
       </div>
-      <main className="flex flex-1 flex-col overflow-hidden animate-fade-in">
+      
+      {/* MODIFICATION ICI : 
+          1. On remplace "overflow-visible" par "overflow-y-auto"
+          2. Cela crée une zone de défilement dédiée pour le contenu à droite
+      */}
+      <main className="flex flex-1 flex-col overflow-auto min-h-0 animate-fade-in">
         {children}
       </main>
     </div>

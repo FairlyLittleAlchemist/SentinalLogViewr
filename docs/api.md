@@ -23,6 +23,11 @@
 - `PATCH /api/alerts/:id`
   - Updates analyst-facing status/assignee via `alert_overrides`.
 
+- `POST /api/alerts/:id/summarize`
+  - Generates/caches an alert summary.
+  - If `N8N_ALERT_RESOLUTION_WEBHOOK_URL` is set, calls n8n webhook first.
+  - Falls back to Hugging Face summarization when n8n is unavailable.
+
 - `GET /api/alerts/:id/correlation`
   - Returns related alerts by shared context.
 

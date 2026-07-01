@@ -9,6 +9,7 @@ import {
   Network,
   Users,
   ClipboardList,
+  Zap,
 } from "lucide-react"
 import type { Role } from "@/lib/auth/roles"
 
@@ -38,11 +39,32 @@ export const navItems: NavItem[] = [
     roles: ["admin", "analyst", "viewer"],
   },
   {
+    label: "Dashboard ",
+    labelKey: "dashboardPowerBI",
+    href: "/dashboard",
+    icon: LayoutDashboard,
+    roles: ["admin", "analyst", "viewer"],
+  },
+  {
+    label: "Dashboard Analyste",
+    labelKey: "dashboardAnalyste",
+    href: "/analyste",
+    icon: ShieldAlert,
+    roles: ["admin", "analyst", "viewer"],
+  },
+  {
     label: "Alerts",
     labelKey: "alerts",
     href: "/alerts",
     icon: Bell,
     badge: 23,
+    roles: ["admin", "analyst", "viewer"],
+  },
+  {
+    label: "Remediation Dashboard",
+    labelKey: "remediation",
+    href: "/remediation",
+    icon: Zap,
     roles: ["admin", "analyst", "viewer"],
   },
   {
@@ -87,5 +109,12 @@ export const navItems: NavItem[] = [
     href: "/admin",
     icon: Users,
     roles: ["admin"],
+  },
+  {
+    label: "ML Sandbox",
+    labelKey: "mlSandbox",
+    href: "/ml-sandbox",
+    icon: Zap,
+    roles: ["admin", "analyst"],
   },
 ]

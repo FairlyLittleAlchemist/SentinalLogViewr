@@ -18,7 +18,10 @@
   },
   "nav": {
     "dashboard": "Dashboard",
+    "dashboardAnalyste": "Analyst Dashboard",
+    "dashboardPowerBI": "Dashbord Power BI",
     "alerts": "Alerts",
+    "remediation": "Remediation Dashboard",
     "logs": "Log Viewer",
     "recommendations": "Recommendations",
     "cases": "Cases",
@@ -27,7 +30,7 @@
     "aiAssistant": "AI Assistant",
     "admin": "Admin Dashboard"
   },
-  "language": {   
+  "language": {
     "label": "Language",
     "english": "English",
     "french": "French"
@@ -35,6 +38,7 @@
   "dashboard": {
     "headerTitle": "Security Overview",
     "title": "Threat Intelligence Dashboard",
+    "description": "Real-time security monitoring and threat detection for your Azure environment.",
     "subtitle": "Real-time security monitoring and threat detection for your Azure environment.",
     "loading": "Loading dashboard stats...",
     "alertTrend": "Alert Trend (24h)",
@@ -45,7 +49,12 @@
     "noRecentAlerts": "No recent alerts available.",
     "topAttackOrigins": "Top Attack Origins",
     "noAttackSourceData": "No attack source data available.",
-    "vsLast24h": "vs last 24h"
+    "vsLast24h": "vs last 24h",
+    "powerbiDashboard": "Power BI Analytics",
+    "powerbiPlaceholder": "Power BI Dashboard",
+    "powerbiConfigInfo": "Configure your Power BI embed URL in the dashboard page to display your reports here.",
+    "error": "Error",
+    "noData": "No data available"
   },
   "pages": {
     "alerts": "Alert Management",

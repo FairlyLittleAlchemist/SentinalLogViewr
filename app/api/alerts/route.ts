@@ -11,6 +11,10 @@ function withSearch<T extends { or: (filters: string) => T }>(query: T, search: 
   return query.or(`title.ilike.%${escaped}%,description.ilike.%${escaped}%,id.ilike.%${escaped}%`)
 }
 
+function normalizeLookupId(value: string): string {
+  return value.replace(/^alert-/, "").trim()
+}
+
 export async function GET(request: Request) {
   const supabase = await createClient()
   const { searchParams } = new URL(request.url)
@@ -86,6 +90,11 @@ export async function GET(request: Request) {
   )
 
   const alertIds = (data ?? []).map((alert) => alert.id)
+  const lookupIds = Array.from(new Set([
+    ...alertIds,
+    ...alertIds.map((id) => normalizeLookupId(String(id))),
+  ].filter(Boolean)))
+
   const { data: overrides, error: overrideError } = alertIds.length
     ? await supabase.from("alert_overrides").select("alert_id,status,assignee").in("alert_id", alertIds)
     : { data: [], error: null }
@@ -97,6 +106,35 @@ export async function GET(request: Request) {
   const overrideMap = new Map(
     (overrides ?? []).map((item) => [item.alert_id, item])
   )
+
+  const { data: resolutions, error: resolutionError } = lookupIds.length
+    ? await supabase
+      .from("alert_resolution_knowledge")
+      .select("linked_alert_id,alert_type,severity,fingerprint,issue_summary,root_cause,remediation_steps,containment_steps,validation_steps,outcome,tags")
+      .in("linked_alert_id", lookupIds)
+    : { data: [], error: null }
+
+  if (resolutionError) {
+    return NextResponse.json({ error: resolutionError.message }, { status: 500 })
+  }
+
+  const resolutionMap = new Map<string, Record<string, unknown>>()
+  for (const row of resolutions ?? []) {
+    const linkedAlertId = String(row.linked_alert_id ?? "").trim()
+    if (!linkedAlertId || resolutionMap.has(linkedAlertId)) continue
+    resolutionMap.set(linkedAlertId, {
+      alert_type: row.alert_type ?? null,
+      severity: row.severity ?? null,
+      fingerprint: row.fingerprint ?? null,
+      issue_summary: row.issue_summary ?? null,
+      root_cause: row.root_cause ?? null,
+      remediation_steps: row.remediation_steps ?? null,
+      containment_steps: row.containment_steps ?? null,
+      validation_steps: row.validation_steps ?? null,
+      outcome: row.outcome ?? null,
+      tags: Array.isArray(row.tags) ? row.tags : [],
+    })
+  }
 
   const alerts = (data ?? []).map((alert) => {
     const eventUid = String(alert.id || "").replace(/^alert-/, "")
@@ -113,9 +151,15 @@ export async function GET(request: Request) {
       (alert.description ?? "").trim()
     )
     const parsed = parsePayload(payloadInput)
+    const linkedResolution =
+      resolutionMap.get(String(alert.id))
+      ?? resolutionMap.get(eventUid)
+      ?? null
+
     const parsedFacts = {
       ...parsed.facts,
       ...(alert.parsed_facts ?? {}),
+      ...(linkedResolution ? { n8nResolution: linkedResolution } : {}),
     }
     parsedFacts.owner = normalizeAssignee(parsedFacts.owner) ?? ""
     const summary = normalizeSummary(parsedFacts.summary)
@@ -189,7 +233,8 @@ export async function GET(request: Request) {
   }
 
   const alertTypes = ["incident", "activity", "firewall", "security_event"] as const
-  const typeTotals: Record<(typeof alertTypes)[number], number> = {
+  const typeTotals: Record<(typeof alertTypes)[number] | "all", number> = {
+    all: 0,
     incident: 0,
     activity: 0,
     firewall: 0,
@@ -216,6 +261,11 @@ export async function GET(request: Request) {
     }
     typeTotals[alertType] = alertTypeCount ?? 0
   }
+
+  // Compute the “all alerts” total (same filters except type)
+  typeTotals.all = Object.values(typeTotals)
+    .filter((value): value is number => typeof value === "number")
+    .reduce((sum, next) => sum + next, 0)
 
   return NextResponse.json({
     alerts,

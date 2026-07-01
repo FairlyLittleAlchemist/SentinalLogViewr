@@ -59,6 +59,7 @@ import {
   GitBranch,
   ClipboardList,
   Plus,
+  Brain,
 } from "lucide-react"
 import { Light as SyntaxHighlighter } from "react-syntax-highlighter"
 import { vs2015 } from "react-syntax-highlighter/dist/esm/styles/hljs"
@@ -88,7 +89,13 @@ const statusLabels = {
   dismissed: "Dismissed",
 }
 
-type AlertType = "incident" | "activity" | "firewall" | "security_event"
+type AlertType = "all" | "incident" | "activity" | "firewall" | "security_event"
+
+type MlGrade = {
+  label: "TruePositive" | "BenignPositive" | "FalsePositive"
+  confidence: number
+  probabilities: Record<string, number>
+}
 
 type SavedView = {
   id: string
@@ -125,6 +132,19 @@ type CorrelationPayload = {
   }
 }
 
+type N8nResolution = {
+  alert_type?: string | null
+  severity?: string | null
+  outcome?: string | null
+  fingerprint?: string | null
+  issue_summary?: string | null
+  root_cause?: string | null
+  remediation_steps?: string | null
+  containment_steps?: string | null
+  validation_steps?: string | null
+  tags?: string[]
+}
+
 type CaseItem = {
   id: string
   alertId: string
@@ -153,6 +173,7 @@ type CaseAssigneeHint = { id: string; name: string; email: string; role: string;
 type PlaybookOption = { id: string; name: string; key: string; isActive: boolean }
 
 const TYPE_TABS: Array<{ type: AlertType; label: string }> = [
+  { type: "all", label: "Alerts" },
   { type: "incident", label: "Incidents" },
   { type: "security_event", label: "Security Events" },
   { type: "activity", label: "Activity" },
@@ -257,6 +278,60 @@ function getRawRowValue(row: Record<string, unknown> | null | undefined, keys: s
   return ""
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null
+  return value as Record<string, unknown>
+}
+
+function asText(value: unknown): string | null {
+  if (Array.isArray(value)) {
+    const items = value
+      .map((entry) => String(entry ?? "").trim())
+      .filter((entry) => entry && entry.toLowerCase() !== "null" && entry.toLowerCase() !== "undefined")
+    return items.length ? items.join("\n") : null
+  }
+  const raw = String(value ?? "").trim()
+  if (!raw) return null
+  if (raw.toLowerCase() === "null" || raw.toLowerCase() === "undefined") return null
+  return raw
+}
+
+function getN8nResolution(alert: Alert | null): N8nResolution | null {
+  const parsedFacts = asRecord(alert?.parsedFacts)
+  if (!parsedFacts) return null
+
+  const candidate = asRecord(parsedFacts.n8nResolution)
+  if (!candidate) return null
+
+  const tags = Array.isArray(candidate.tags)
+    ? candidate.tags.map((tag) => String(tag ?? "").trim()).filter(Boolean)
+    : []
+
+  const resolution: N8nResolution = {
+    alert_type: asText(candidate.alert_type),
+    severity: asText(candidate.severity),
+    outcome: asText(candidate.outcome),
+    fingerprint: asText(candidate.fingerprint),
+    issue_summary: asText(candidate.issue_summary),
+    root_cause: asText(candidate.root_cause),
+    remediation_steps: asText(candidate.remediation_steps),
+    containment_steps: asText(candidate.containment_steps),
+    validation_steps: asText(candidate.validation_steps),
+    tags,
+  }
+
+  const hasContent = Boolean(
+    resolution.issue_summary
+    || resolution.root_cause
+    || resolution.remediation_steps
+    || resolution.containment_steps
+    || resolution.validation_steps
+    || resolution.fingerprint
+  )
+
+  return hasContent ? resolution : null
+}
+
 type AlertsListProps = {
   alerts: Alert[]
   isLoading: boolean
@@ -267,6 +342,18 @@ type AlertsListProps = {
   totalPages: number
   onPrev: () => void
   onNext: () => void
+  mlGrades?: Record<string, MlGrade | "loading" | null>
+}
+
+const mlGradeStyles: Record<string, string> = {
+  TruePositive:   "bg-destructive/15 text-destructive border-destructive/30",
+  BenignPositive: "bg-emerald-500/15 text-emerald-500 border-emerald-500/30",
+  FalsePositive:  "bg-blue-500/15 text-blue-400 border-blue-400/30",
+}
+const mlGradeShortLabel: Record<string, string> = {
+  TruePositive:   "True +",
+  BenignPositive: "Benign +",
+  FalsePositive:  "False +",
 }
 
 function AlertsListBase(props: AlertsListProps & { emptyLabel: string }) {
@@ -281,6 +368,7 @@ function AlertsListBase(props: AlertsListProps & { emptyLabel: string }) {
     onPrev,
     onNext,
     emptyLabel,
+    mlGrades,
   } = props
 
   return (
@@ -358,6 +446,27 @@ function AlertsListBase(props: AlertsListProps & { emptyLabel: string }) {
                           <span>{alert.assignee}</span>
                         </div>
                       )}
+                      {/* ML classification badge */}
+                      {mlGrades?.[alert.id] === "loading" && (
+                        <div className="flex items-center gap-1">
+                          <Brain className="h-3 w-3 animate-pulse text-muted-foreground" />
+                          <span>ML…</span>
+                        </div>
+                      )}
+                      {mlGrades?.[alert.id] && mlGrades[alert.id] !== "loading" && (
+                        <Badge
+                          className={cn(
+                            "text-[10px] px-1.5 py-0 flex items-center gap-1",
+                            mlGradeStyles[(mlGrades[alert.id] as MlGrade).label] ?? "",
+                          )}
+                        >
+                          <Brain className="h-2.5 w-2.5" />
+                          {mlGradeShortLabel[(mlGrades[alert.id] as MlGrade).label]}
+                          <span className="opacity-70">
+                            {Math.round((mlGrades[alert.id] as MlGrade).confidence * 100)}%
+                          </span>
+                        </Badge>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -415,6 +524,10 @@ function SecurityEventAlertsList(props: AlertsListProps) {
   return <AlertsListBase {...props} emptyLabel="No security events match your filters." />
 }
 
+function AllAlertsList(props: AlertsListProps) {
+  return <AlertsListBase {...props} emptyLabel="No alerts match your filters." />
+}
+
 function ActivityAlertsList(props: AlertsListProps) {
   return <AlertsListBase {...props} emptyLabel="No activity alerts match your filters." />
 }
@@ -430,7 +543,7 @@ export default function AlertsPage() {
   const [search, setSearch] = useState("")
   const [severityFilter, setSeverityFilter] = useState<string>("all")
   const [statusFilter, setStatusFilter] = useState<string>("all")
-  const [typeFilter, setTypeFilter] = useState<AlertType>("incident")
+  const [typeFilter, setTypeFilter] = useState<AlertType>("all")
   const [page, setPage] = useState(1)
   const pageSize = 50
   const [totalAlerts, setTotalAlerts] = useState(0)
@@ -445,6 +558,7 @@ export default function AlertsPage() {
     low: 0,
   })
   const [typeTotals, setTypeTotals] = useState<Record<AlertType, number>>({
+    all: 0,
     incident: 0,
     activity: 0,
     firewall: 0,
@@ -452,6 +566,7 @@ export default function AlertsPage() {
   })
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [mlGrades, setMlGrades] = useState<Record<string, MlGrade | "loading" | null>>({})
   const [savedViews, setSavedViews] = useState<SavedView[]>([])
   const [selectedViewId, setSelectedViewId] = useState<string>("")
   const [viewNameInput, setViewNameInput] = useState("")
@@ -487,6 +602,8 @@ export default function AlertsPage() {
   const prettyRow = rawRowSource ? prettyRaw(rawRowSource, rawRowLanguage) : ""
   const hasStructuredPayload =
     rawPayloadLanguage === "json" || rawPayloadLanguage === "xml" || rawPayloadLanguage === "kv"
+  const n8nResolution = getN8nResolution(selectedAlert)
+
   const headerDescription = (() => {
     const summary = selectedAlert?.summary?.trim() || selectedAlert?.parsedFacts?.summary?.trim() || ""
     if (summary) return summary
@@ -534,6 +651,63 @@ export default function AlertsPage() {
     status: statusFilter,
     type: typeFilter,
   }), [search, severityFilter, statusFilter, typeFilter])
+
+  async function fetchMlGrades(alertsToGrade: Alert[]) {
+    if (alertsToGrade.length === 0) return
+    setMlGrades((prev) => {
+      const next = { ...prev }
+      for (const a of alertsToGrade) next[a.id] = "loading"
+      return next
+    })
+    await Promise.allSettled(
+      alertsToGrade.map(async (alert) => {
+        try {
+          const raw = (alert.rawRow ?? {}) as Record<string, unknown>
+          const created = alert.timestamp ? new Date(alert.timestamp) : null
+          const closed  = raw["ClosedTime [UTC]"]       ? new Date(raw["ClosedTime [UTC]"] as string)       : null
+          const firstAct= raw["FirstActivityTime [UTC]"]? new Date(raw["FirstActivityTime [UTC]"] as string): null
+          const lastAct = raw["LastActivityTime [UTC]"] ? new Date(raw["LastActivityTime [UTC]"] as string) : null
+          const pyWday  = created ? (created.getDay() + 6) % 7 : -1   // JS Sun=0 → Python Mon=0
+          const res = await fetch("/api/incident-grade", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title:               alert.title ?? "",
+              description:         alert.description ?? "",
+              severity:            alert.severity ?? "informational",
+              alert_count:         Array.isArray(raw["AlertIds"])
+                                     ? (raw["AlertIds"] as unknown[]).length
+                                     : typeof raw["AlertIds"] === "string"
+                                       ? (raw["AlertIds"] as string).split(",").length
+                                       : 0,
+              rule_count:          typeof raw["RelatedAnalyticRuleIds"] === "string"
+                                     ? (raw["RelatedAnalyticRuleIds"] as string).split(",").length
+                                     : 0,
+              incident_duration_h: closed && created
+                                     ? (closed.getTime() - created.getTime()) / 3_600_000
+                                     : -1,
+              alert_span_h:        lastAct && firstAct
+                                     ? (lastAct.getTime() - firstAct.getTime()) / 3_600_000
+                                     : -1,
+              create_hour:         created ? created.getHours()   : -1,
+              create_weekday:      pyWday,
+              create_is_weekend:   pyWday >= 5 ? 1 : pyWday >= 0 ? 0 : -1,
+              first_activity_hour: firstAct ? firstAct.getHours() : -1,
+              title_len:           (alert.title ?? "").length,
+            }),
+          })
+          if (!res.ok) {
+            setMlGrades((prev) => ({ ...prev, [alert.id]: null }))
+            return
+          }
+          const data = await res.json() as MlGrade
+          setMlGrades((prev) => ({ ...prev, [alert.id]: data }))
+        } catch {
+          setMlGrades((prev) => ({ ...prev, [alert.id]: null }))
+        }
+      })
+    )
+  }
 
   async function loadSavedViews(token?: string) {
     const query = token ? `?token=${encodeURIComponent(token)}` : ""
@@ -875,8 +1049,9 @@ export default function AlertsPage() {
         setAlerts(payload.alerts)
         setTotalAlerts(payload.total ?? payload.alerts.length)
         setSeverityTotals(payload.severityTotals ?? { critical: 0, high: 0, medium: 0, low: 0 })
-        setTypeTotals(payload.typeTotals ?? { incident: 0, activity: 0, firewall: 0, security_event: 0 })
+        setTypeTotals(payload.typeTotals ?? { all: 0, incident: 0, activity: 0, firewall: 0, security_event: 0 })
         setLoadError(null)
+        void fetchMlGrades(payload.alerts)
       } catch (error) {
         if (!controller.signal.aborted) {
           setLoadError(error instanceof Error ? error.message : "Failed to load alerts")
@@ -901,6 +1076,7 @@ export default function AlertsPage() {
     setAlerts([])
     setTotalAlerts(0)
     setSelectedAlert(null)
+    setMlGrades({})
   }, [typeFilter])
 
   useEffect(() => {
@@ -958,550 +1134,531 @@ export default function AlertsPage() {
 
   return (
     <RenderProfiler id="alerts-page">
-    <DashboardLayout>
-      <AppHeader title={t("alerts")} />
-      <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-6 p-4 lg:p-6">
-          <div className="flex flex-col gap-1">
-            <h2 className="text-lg font-semibold text-foreground">Alert Management</h2>
-            <p className="text-sm text-muted-foreground">
-              Investigate, triage, and respond to security alerts from Azure Sentinel.
-            </p>
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Search alerts by title, description, or ID..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="h-9 bg-secondary pl-8 text-sm text-foreground placeholder:text-muted-foreground"
-              />
+      <DashboardLayout>
+        <AppHeader title={t("alerts")} />
+        <ScrollArea className="flex-1">
+          <div className="flex flex-col gap-6 p-4 lg:p-6">
+            <div className="flex flex-col gap-1">
+              <h2 className="text-lg font-semibold text-foreground">Alert Management</h2>
+              <p className="text-sm text-muted-foreground">
+                Investigate, triage, and respond to security alerts from Azure Sentinel.
+              </p>
             </div>
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <Select value={severityFilter} onValueChange={setSeverityFilter}>
-                <SelectTrigger className="h-9 w-32 bg-secondary text-sm text-foreground">
-                  <SelectValue placeholder="Severity" />
-                </SelectTrigger>
-                <SelectContent className="bg-card text-foreground">
-                  <SelectItem value="all">All Severity</SelectItem>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-9 w-32 bg-secondary text-sm text-foreground">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent className="bg-card text-foreground">
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="new">New</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="resolved">Resolved</SelectItem>
-                  <SelectItem value="dismissed">Dismissed</SelectItem>
-                </SelectContent>
-              </Select>
+
+            {/* Filters */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1">
+                <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Search alerts by title, description, or ID..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="h-9 bg-secondary pl-8 text-sm text-foreground placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <Select value={severityFilter} onValueChange={setSeverityFilter}>
+                  <SelectTrigger className="h-9 w-32 bg-secondary text-sm text-foreground">
+                    <SelectValue placeholder="Severity" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card text-foreground">
+                    <SelectItem value="all">All Severity</SelectItem>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="h-9 w-32 bg-secondary text-sm text-foreground">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-card text-foreground">
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="new">New</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="resolved">Resolved</SelectItem>
+                    <SelectItem value="dismissed">Dismissed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
 
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/50 p-3 sm:flex-row sm:items-center">
-            <Select
-              value={selectedViewId || "none"}
-              onValueChange={(value) => {
-                if (value === "none") {
-                  setSelectedViewId("")
-                  return
-                }
-                setSelectedViewId(value)
-                const selected = savedViews.find((view) => view.id === value)
-                if (selected) applySavedView(selected.filters)
-              }}
-            >
-              <SelectTrigger className="h-8 w-full bg-secondary sm:w-64">
-                <SelectValue placeholder="Saved views" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Saved views</SelectItem>
-                {savedViews.map((view) => (
-                  <SelectItem key={view.id} value={view.id}>{view.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Input
-              value={viewNameInput}
-              onChange={(event) => setViewNameInput(event.target.value)}
-              placeholder="Name this view..."
-              className="h-8 sm:w-56"
-            />
-            <Button size="sm" variant="outline" onClick={() => void createSavedView()} disabled={savingView}>
-              <Save className="mr-1 h-3.5 w-3.5" />
-              Save current
-            </Button>
-            {selectedViewId ? (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const selected = savedViews.find((view) => view.id === selectedViewId)
-                  if (selected?.shareToken) void copySavedViewLink(selected)
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-card/50 p-3 sm:flex-row sm:items-center">
+              <Select
+                value={selectedViewId || "none"}
+                onValueChange={(value) => {
+                  if (value === "none") {
+                    setSelectedViewId("")
+                    return
+                  }
+                  setSelectedViewId(value)
+                  const selected = savedViews.find((view) => view.id === value)
+                  if (selected) applySavedView(selected.filters)
                 }}
               >
-                <Share2 className="mr-1 h-3.5 w-3.5" />
-                {copiedViewToken && savedViews.find((view) => view.id === selectedViewId)?.shareToken === copiedViewToken ? "Copied" : "Copy share link"}
+                <SelectTrigger className="h-8 w-full bg-secondary sm:w-64">
+                  <SelectValue placeholder="Saved views" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Saved views</SelectItem>
+                  {savedViews.map((view) => (
+                    <SelectItem key={view.id} value={view.id}>{view.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Input
+                value={viewNameInput}
+                onChange={(event) => setViewNameInput(event.target.value)}
+                placeholder="Name this view..."
+                className="h-8 sm:w-56"
+              />
+              <Button size="sm" variant="outline" onClick={() => void createSavedView()} disabled={savingView}>
+                <Save className="mr-1 h-3.5 w-3.5" />
+                Save current
               </Button>
-            ) : null}
+              {selectedViewId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const selected = savedViews.find((view) => view.id === selectedViewId)
+                    if (selected?.shareToken) void copySavedViewLink(selected)
+                  }}
+                >
+                  <Share2 className="mr-1 h-3.5 w-3.5" />
+                  {copiedViewToken && savedViews.find((view) => view.id === selectedViewId)?.shareToken === copiedViewToken ? "Copied" : "Copy share link"}
+                </Button>
+              ) : null}
+            </div>
+
+            {/* Alert Stats */}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {(["critical", "high", "medium", "low"] as const).map((sev) => {
+                const count = severityTotals[sev] ?? 0
+                return (
+                  <Card key={sev} className="bg-card border-border">
+                    <CardContent className="flex items-center justify-between p-3">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-medium uppercase text-muted-foreground">{sev}</span>
+                        <span className="text-xl font-bold text-foreground">{count}</span>
+                      </div>
+                      <div className={cn("h-2 w-2 rounded-full", {
+                        "bg-destructive": sev === "critical",
+                        "bg-[hsl(38,92%,50%)]": sev === "high",
+                        "bg-[hsl(45,93%,47%)]": sev === "medium",
+                        "bg-[hsl(210,90%,56%)]": sev === "low",
+                      })} />
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+
+            <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as AlertType)} className="mt-1">
+              <TabsList className="grid w-full grid-cols-2 bg-secondary/60 md:grid-cols-5">
+                {TYPE_TABS.map((entry) => (
+                  <TabsTrigger key={entry.type} value={entry.type} className="text-[10px] px-2 py-1">
+                    {entry.label}{" "}
+                    <span className="ml-1 text-[9px] text-muted-foreground">
+                      {typeTotals[entry.type] ?? 0}
+                    </span>
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              <TabsContent value="all" className="mt-4">
+                <AllAlertsList
+                  alerts={alerts}
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  onSelect={setSelectedAlert}
+                  page={page}
+                  totalAlerts={totalAlerts}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((current) => Math.max(current - 1, 1))}
+                  onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
+                  mlGrades={mlGrades}
+                />
+              </TabsContent>
+              <TabsContent value="incident" className="mt-4">
+                <IncidentAlertsList
+                  alerts={alerts}
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  onSelect={setSelectedAlert}
+                  page={page}
+                  totalAlerts={totalAlerts}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((current) => Math.max(current - 1, 1))}
+                  onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
+                  mlGrades={mlGrades}
+                />
+              </TabsContent>
+              <TabsContent value="security_event" className="mt-4">
+                <SecurityEventAlertsList
+                  alerts={alerts}
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  onSelect={setSelectedAlert}
+                  page={page}
+                  totalAlerts={totalAlerts}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((current) => Math.max(current - 1, 1))}
+                  onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
+                  mlGrades={mlGrades}
+                />
+              </TabsContent>
+              <TabsContent value="activity" className="mt-4">
+                <ActivityAlertsList
+                  alerts={alerts}
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  onSelect={setSelectedAlert}
+                  page={page}
+                  totalAlerts={totalAlerts}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((current) => Math.max(current - 1, 1))}
+                  onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
+                  mlGrades={mlGrades}
+                />
+              </TabsContent>
+              <TabsContent value="firewall" className="mt-4">
+                <FirewallAlertsList
+                  alerts={alerts}
+                  isLoading={isLoading}
+                  loadError={loadError}
+                  onSelect={setSelectedAlert}
+                  page={page}
+                  totalAlerts={totalAlerts}
+                  totalPages={totalPages}
+                  onPrev={() => setPage((current) => Math.max(current - 1, 1))}
+                  onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
+                  mlGrades={mlGrades}
+                />
+              </TabsContent>
+            </Tabs>
           </div>
+        </ScrollArea>
 
-          {/* Alert Stats */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(["critical", "high", "medium", "low"] as const).map((sev) => {
-              const count = severityTotals[sev] ?? 0
-              return (
-                <Card key={sev} className="bg-card border-border">
-                  <CardContent className="flex items-center justify-between p-3">
-                    <div className="flex flex-col">
-                      <span className="text-[10px] font-medium uppercase text-muted-foreground">{sev}</span>
-                      <span className="text-xl font-bold text-foreground">{count}</span>
-                    </div>
-                    <div className={cn("h-2 w-2 rounded-full", {
-                      "bg-destructive": sev === "critical",
-                      "bg-[hsl(38,92%,50%)]": sev === "high",
-                      "bg-[hsl(45,93%,47%)]": sev === "medium",
-                      "bg-[hsl(210,90%,56%)]": sev === "low",
-                    })} />
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-
-          <Tabs value={typeFilter} onValueChange={(value) => setTypeFilter(value as AlertType)} className="mt-1">
-            <TabsList className="grid w-full grid-cols-2 bg-secondary/60 md:grid-cols-4">
-              {TYPE_TABS.map((entry) => (
-                <TabsTrigger key={entry.type} value={entry.type} className="text-xs">
-                  {entry.label}{" "}
-                  <span className="ml-2 text-[10px] text-muted-foreground">
-                    {typeTotals[entry.type] ?? 0}
-                  </span>
-                </TabsTrigger>
-              ))}
-            </TabsList>
-
-            <TabsContent value="incident" className="mt-4">
-              <IncidentAlertsList
-                alerts={alerts}
-                isLoading={isLoading}
-                loadError={loadError}
-                onSelect={setSelectedAlert}
-                page={page}
-                totalAlerts={totalAlerts}
-                totalPages={totalPages}
-                onPrev={() => setPage((current) => Math.max(current - 1, 1))}
-                onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
-              />
-            </TabsContent>
-            <TabsContent value="security_event" className="mt-4">
-              <SecurityEventAlertsList
-                alerts={alerts}
-                isLoading={isLoading}
-                loadError={loadError}
-                onSelect={setSelectedAlert}
-                page={page}
-                totalAlerts={totalAlerts}
-                totalPages={totalPages}
-                onPrev={() => setPage((current) => Math.max(current - 1, 1))}
-                onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
-              />
-            </TabsContent>
-            <TabsContent value="activity" className="mt-4">
-              <ActivityAlertsList
-                alerts={alerts}
-                isLoading={isLoading}
-                loadError={loadError}
-                onSelect={setSelectedAlert}
-                page={page}
-                totalAlerts={totalAlerts}
-                totalPages={totalPages}
-                onPrev={() => setPage((current) => Math.max(current - 1, 1))}
-                onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
-              />
-            </TabsContent>
-            <TabsContent value="firewall" className="mt-4">
-              <FirewallAlertsList
-                alerts={alerts}
-                isLoading={isLoading}
-                loadError={loadError}
-                onSelect={setSelectedAlert}
-                page={page}
-                totalAlerts={totalAlerts}
-                totalPages={totalPages}
-                onPrev={() => setPage((current) => Math.max(current - 1, 1))}
-                onNext={() => setPage((current) => Math.min(current + 1, totalPages))}
-              />
-            </TabsContent>
-          </Tabs>
-        </div>
-      </ScrollArea>
-
-      {/* Alert Detail Dialog */}
-      <Dialog open={!!selectedAlert} onOpenChange={() => setSelectedAlert(null)}>
-        <DialogContent className="max-h-[90vh] overflow-y-auto bg-card text-foreground border-border sm:max-w-2xl">
-          {selectedAlert && (
-            <>
-              <DialogHeader>
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs font-mono text-muted-foreground">{selectedAlert.id}</span>
-                  <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[selectedAlert.severity])}>
-                    {selectedAlert.severity}
-                  </Badge>
-                  {selectedType ? (
-                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground">
-                      {selectedTypeLabel}
+        {/* Alert Detail Dialog */}
+        <Dialog open={!!selectedAlert} onOpenChange={() => setSelectedAlert(null)}>
+          <DialogContent className="max-h-[90vh] overflow-y-auto bg-card text-foreground border-border sm:max-w-2xl">
+            {selectedAlert && (
+              <>
+                <DialogHeader>
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className="text-xs font-mono text-muted-foreground">{selectedAlert.id}</span>
+                    <Badge className={cn("text-[10px] px-1.5 py-0", severityStyles[selectedAlert.severity])}>
+                      {selectedAlert.severity}
                     </Badge>
-                  ) : null}
-                </div>
-                <DialogTitle className="text-foreground">{formatAlertTitle(selectedAlert.title)}</DialogTitle>
-                <DialogDescription className="text-muted-foreground">{headerDescription}</DialogDescription>
-              </DialogHeader>
-
-              <Tabs defaultValue="summary" className="mt-4">
-                <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
-                  <TabsTrigger value="summary">Summary</TabsTrigger>
-                  <TabsTrigger value="correlation">Correlation</TabsTrigger>
-                  <TabsTrigger value="case">Case</TabsTrigger>
-                  <TabsTrigger value="event">Event Data</TabsTrigger>
-                </TabsList>
-                <TabsContent value="summary" className="mt-4">
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Source</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.source}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Type</span>
-                        <span className="text-xs font-medium text-foreground">{selectedTypeLabel}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Status</span>
-                        <span className="text-xs font-medium text-foreground">{statusLabels[selectedAlert.status]}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Assignee</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.assignee || selectedAlert.parsedFacts?.owner || "Unassigned"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Time</span>
-                        <span className="text-xs font-medium text-foreground">{formatTimestamp(selectedAlert.timestamp)}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Provider</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.parsedFacts?.provider || selectedAlert.provider || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Event Code</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.eventCode || selectedAlert.parsedFacts?.incidentId || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Status Source</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.statusSource || "detected"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Source File</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.sourceFile || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Payload Kind</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.payloadKind || "text"}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Investigation Context</h4>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Actor</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.actor || selectedAlert.parsedFacts?.actor || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">IP Address</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.ipAddress || selectedAlert.parsedFacts?.ip || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Resource</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.resource || selectedAlert.parsedFacts?.resource || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Classification</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.classification || "Unclassified"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {selectedType === "firewall" ? (
-                      <div className="flex flex-col gap-2">
-                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Network Context</h4>
-                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Source IP</div>
-                            <div className="text-xs text-foreground break-words">
-                              {getRawRowValue(selectedAlert.rawRow, ["sourceip", "srcip", "src_ip", "source_ip"]) || selectedAlert.ipAddress || selectedAlert.parsedFacts?.ip || "Unknown"}
-                            </div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Destination IP</div>
-                            <div className="text-xs text-foreground break-words">
-                              {getRawRowValue(selectedAlert.rawRow, ["destinationip", "destip", "dstip", "dst_ip", "destination_ip"]) || "Unknown"}
-                            </div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Protocol</div>
-                            <div className="text-xs text-foreground break-words">
-                              {getRawRowValue(selectedAlert.rawRow, ["protocol", "networkprotocol", "proto"]) || "Unknown"}
-                            </div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Destination Port</div>
-                            <div className="text-xs text-foreground break-words">
-                              {getRawRowValue(selectedAlert.rawRow, ["destinationport", "destport", "dstport", "dst_port", "destination_port"]) || "Unknown"}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Risk Context</h4>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Category</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.category || selectedAlert.parsedFacts?.category || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Action</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.action || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Linked Alerts</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.alertCount || "Unknown"}</div>
-                        </div>
-                        <div className="rounded-lg border border-border bg-card px-3 py-2">
-                          <div className="text-[10px] uppercase text-muted-foreground">Incident ID</div>
-                          <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.incidentId || "Unknown"}</div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Evidence IDs</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {Array.from(new Set([selectedAlert.id, selectedAlert.eventCode, selectedAlert.parsedFacts?.incidentId]
-                          .filter(Boolean)
-                          .map((value) => String(value))))
-                          .map((value) => (
-                            <Badge key={value} variant="outline" className="font-mono text-[10px]">
-                              {value}
-                            </Badge>
-                          ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">MITRE ATT&CK Tactics</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedAlert.tactics.map((tactic) => (
-                          <Badge key={tactic} variant="outline" className="text-[10px] text-foreground border-border">
-                            {tactic}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Affected Entities</h4>
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedAlert.affectedEntities.map((entity) => (
-                          <Badge key={entity} className="bg-secondary text-[10px] text-foreground border-border">
-                            {entity}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Recommended Actions</h4>
-                      <div className="flex flex-col gap-2">
-                        {selectedAlert.recommendedActions.map((action, idx) => (
-                          <div key={idx} className="flex items-start gap-2 rounded-lg border border-border bg-secondary/30 p-3">
-                            <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
-                              {idx + 1}
-                            </div>
-                            <span className="text-xs leading-relaxed text-foreground">{action}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2">
-                      <Button
-                        size="sm"
-                        className="bg-primary text-primary-foreground hover:bg-primary/90"
-                        onClick={() => void updateSelectedAlert({ status: "in_progress" })}
-                        disabled={actionPending}
-                      >
-                        Mark In Progress
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-foreground border-border bg-transparent"
-                        onClick={() => void updateSelectedAlert({ status: "resolved" })}
-                        disabled={actionPending}
-                      >
-                        Resolve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="text-foreground border-border bg-transparent"
-                        onClick={() => void updateSelectedAlert({ status: "dismissed" })}
-                        disabled={actionPending}
-                      >
-                        Dismiss
-                      </Button>
-                    </div>
-                  </div>
-                </TabsContent>
-                <TabsContent value="correlation" className="mt-4">
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-semibold uppercase text-muted-foreground">Correlation Overview</h4>
-                      <Badge variant="outline" className="text-[10px]">
-                        {correlation?.totalRelated ?? 0} related
+                    {selectedType ? (
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-muted-foreground">
+                        {selectedTypeLabel}
                       </Badge>
-                    </div>
-                    {correlationLoading ? (
-                      <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
-                        Loading correlation...
-                      </div>
                     ) : null}
-                    {!correlationLoading && correlation && correlation.timeline.length > 0 ? (
-                      <div className="space-y-2">
-                        {correlation.timeline.map((item) => (
-                          <div key={`timeline-${item.id}`} className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-xs font-medium text-foreground">{formatAlertTitle(item.title)}</div>
-                              <div className="text-[10px] text-muted-foreground">{formatTimestamp(item.timestamp)}</div>
-                            </div>
-                            <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
-                              <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
-                              {item.actor ? <Badge variant="secondary" className="text-[10px]">Actor: {item.actor}</Badge> : null}
-                              {item.ipAddress ? <Badge variant="secondary" className="text-[10px]">IP: {item.ipAddress}</Badge> : null}
-                              {item.resource ? <Badge variant="secondary" className="text-[10px]">Resource: {item.resource}</Badge> : null}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    {!correlationLoading && (!correlation || correlation.timeline.length === 0) ? (
-                      <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
-                        No related alerts found by actor, IP, resource, or incident ID.
-                      </div>
-                    ) : null}
+                    {mlGrades[selectedAlert.id] && mlGrades[selectedAlert.id] !== "loading" && (
+                      <Badge
+                        className={cn(
+                          "text-[10px] px-1.5 py-0 flex items-center gap-1",
+                          mlGradeStyles[(mlGrades[selectedAlert.id] as MlGrade).label] ?? "",
+                        )}
+                      >
+                        <Brain className="h-2.5 w-2.5" />
+                        {mlGradeShortLabel[(mlGrades[selectedAlert.id] as MlGrade).label]}
+                        <span className="opacity-70">
+                          {Math.round((mlGrades[selectedAlert.id] as MlGrade).confidence * 100)}%
+                        </span>
+                      </Badge>
+                    )}
                   </div>
-                </TabsContent>
-                <TabsContent value="case" className="mt-4">
-                  <div className="flex flex-col gap-4">
-                    {!caseItem ? (
-                      <div className="rounded-lg border border-border bg-secondary/30 p-4">
-                        <p className="text-xs text-muted-foreground">No case exists for this alert.</p>
-                        <div className="mt-2 flex flex-col gap-2">
-                          <Select value={selectedAssigneeUserId || "none"} onValueChange={setSelectedAssigneeUserId}>
-                            <SelectTrigger className="h-8 bg-secondary md:w-80">
-                              <SelectValue placeholder="Optional: assign on create" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="none">Unassigned</SelectItem>
-                              {caseAssignees.map((entry) => (
-                                <SelectItem key={entry.id} value={entry.id}>
-                                  {entry.name} ({entry.openCases} open)
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          <Select value={selectedPlaybookId} onValueChange={setSelectedPlaybookId}>
-                            <SelectTrigger className="h-8 bg-secondary md:w-80">
-                              <SelectValue placeholder="Select playbook" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {availablePlaybooks.map((entry) => (
-                                <SelectItem key={entry.id} value={entry.id}>
-                                  {entry.name} ({entry.key})
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                  <DialogTitle className="text-foreground">{formatAlertTitle(selectedAlert.title)}</DialogTitle>
+                  <DialogDescription className="text-muted-foreground">{headerDescription}</DialogDescription>
+                </DialogHeader>
+
+                <Tabs defaultValue="summary" className="mt-4">
+                  <TabsList className="grid w-full grid-cols-4 bg-secondary/60">
+                    <TabsTrigger value="summary">Summary</TabsTrigger>
+                    <TabsTrigger value="correlation">Correlation</TabsTrigger>
+                    <TabsTrigger value="case">Case</TabsTrigger>
+                    <TabsTrigger value="event">Event Data</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="summary" className="mt-4">
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Source</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.source}</span>
                         </div>
-                        <Button
-                          size="sm"
-                          className="mt-3"
-                          onClick={() => void createCaseForSelectedAlert()}
-                          disabled={caseLoading}
-                        >
-                          <ClipboardList className="mr-1 h-3.5 w-3.5" />
-                          Create case
-                        </Button>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Type</span>
+                          <span className="text-xs font-medium text-foreground">{selectedTypeLabel}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Status</span>
+                          <span className="text-xs font-medium text-foreground">{statusLabels[selectedAlert.status]}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Assignee</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.assignee || selectedAlert.parsedFacts?.owner || "Unassigned"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Time</span>
+                          <span className="text-xs font-medium text-foreground">{formatTimestamp(selectedAlert.timestamp)}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Provider</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.parsedFacts?.provider || selectedAlert.provider || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Event Code</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.eventCode || selectedAlert.parsedFacts?.incidentId || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Status Source</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.statusSource || "detected"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Source File</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.sourceFile || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Payload Kind</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.payloadKind || "text"}</span>
+                        </div>
                       </div>
-                    ) : (
-                      <>
-                        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Case ID</div>
-                            <div className="text-xs font-mono text-foreground">{caseItem.id.slice(0, 8)}</div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Status</div>
-                            <div className="text-xs text-foreground">{caseItem.status.replace("_", " ")}</div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Priority</div>
-                            <div className="text-xs text-foreground">{caseItem.priority}</div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Assignee</div>
-                            <div className="text-xs text-foreground">{caseItem.assignee || "Unassigned"}</div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Playbook</div>
-                            <div className="text-xs text-foreground">{caseItem.playbookKey || "Standard"}</div>
-                          </div>
-                          <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">SLA</div>
-                            <div className="text-xs text-foreground">{caseItem.slaStatus || "on_track"}</div>
-                            {caseItem.dueAt ? (
-                              <div className="text-[10px] text-muted-foreground">Due {formatTimestamp(caseItem.dueAt)}</div>
+
+                      <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">Recommandation n8n</h4>
+                          <div className="flex items-center gap-1.5">
+                            {n8nResolution?.outcome ? (
+                              <Badge variant="outline" className="text-[10px]">{n8nResolution.outcome}</Badge>
+                            ) : null}
+                            {n8nResolution?.alert_type ? (
+                              <Badge variant="outline" className="text-[10px]">{n8nResolution.alert_type}</Badge>
                             ) : null}
                           </div>
+                        </div>
+                        {n8nResolution?.remediation_steps ? (
+                          <div className="rounded-lg border border-border bg-secondary/20 px-3 py-3">
+                            <div className="text-[10px] font-medium uppercase text-muted-foreground">Remediation Steps</div>
+                            <div className="mt-1 text-xs text-foreground break-words whitespace-pre-wrap leading-6">
+                              {n8nResolution.remediation_steps}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-dashed border-border bg-secondary/10 px-3 py-3 text-xs text-muted-foreground">
+                            Aucun `remediation_steps` enregistre pour cette alerte.
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Investigation Context</h4>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
                           <div className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="text-[10px] uppercase text-muted-foreground">Escalation</div>
-                            <div className="text-xs text-foreground">
-                              {caseItem.escalationLevel ? `L${caseItem.escalationLevel} ${caseItem.escalationTarget || ""}` : "None"}
+                            <div className="text-[10px] uppercase text-muted-foreground">Actor</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.actor || selectedAlert.parsedFacts?.actor || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">IP Address</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.ipAddress || selectedAlert.parsedFacts?.ip || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Resource</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.resource || selectedAlert.parsedFacts?.resource || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Classification</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.classification || "Unclassified"}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {selectedType === "firewall" ? (
+                        <div className="flex flex-col gap-2">
+                          <h4 className="text-xs font-semibold uppercase text-muted-foreground">Network Context</h4>
+                          <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Source IP</div>
+                              <div className="text-xs text-foreground break-words">
+                                {getRawRowValue(selectedAlert.rawRow, ["sourceip", "srcip", "src_ip", "source_ip"]) || selectedAlert.ipAddress || selectedAlert.parsedFacts?.ip || "Unknown"}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Destination IP</div>
+                              <div className="text-xs text-foreground break-words">
+                                {getRawRowValue(selectedAlert.rawRow, ["destinationip", "destip", "dstip", "dst_ip", "destination_ip"]) || "Unknown"}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Protocol</div>
+                              <div className="text-xs text-foreground break-words">
+                                {getRawRowValue(selectedAlert.rawRow, ["protocol", "networkprotocol", "proto"]) || "Unknown"}
+                              </div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Destination Port</div>
+                              <div className="text-xs text-foreground break-words">
+                                {getRawRowValue(selectedAlert.rawRow, ["destinationport", "destport", "dstport", "dst_port", "destination_port"]) || "Unknown"}
+                              </div>
                             </div>
                           </div>
                         </div>
+                      ) : null}
 
-                        <div className="rounded-lg border border-border bg-card p-3">
-                          <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Assignment Workflow</div>
-                          <div className="flex flex-col gap-2 md:flex-row">
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Risk Context</h4>
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Category</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.category || selectedAlert.parsedFacts?.category || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Action</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.action || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Linked Alerts</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.alertCount || "Unknown"}</div>
+                          </div>
+                          <div className="rounded-lg border border-border bg-card px-3 py-2">
+                            <div className="text-[10px] uppercase text-muted-foreground">Incident ID</div>
+                            <div className="text-xs text-foreground break-words">{selectedAlert.parsedFacts?.incidentId || "Unknown"}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Evidence IDs</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {Array.from(new Set([selectedAlert.id, selectedAlert.eventCode, selectedAlert.parsedFacts?.incidentId]
+                            .filter(Boolean)
+                            .map((value) => String(value))))
+                            .map((value) => (
+                              <Badge key={value} variant="outline" className="font-mono text-[10px]">
+                                {value}
+                              </Badge>
+                            ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">MITRE ATT&CK Tactics</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedAlert.tactics.map((tactic) => (
+                            <Badge key={tactic} variant="outline" className="text-[10px] text-foreground border-border">
+                              {tactic}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Affected Entities</h4>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selectedAlert.affectedEntities.map((entity) => (
+                            <Badge key={entity} className="bg-secondary text-[10px] text-foreground border-border">
+                              {entity}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col gap-2">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Recommended Actions</h4>
+                        <div className="flex flex-col gap-2">
+                          {selectedAlert.recommendedActions.map((action, idx) => (
+                            <div key={idx} className="flex items-start gap-2 rounded-lg border border-border bg-secondary/30 p-3">
+                              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-[10px] font-bold text-primary">
+                                {idx + 1}
+                              </div>
+                              <span className="text-xs leading-relaxed text-foreground">{action}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2">
+                        <Button
+                          size="sm"
+                          className="bg-primary text-primary-foreground hover:bg-primary/90"
+                          onClick={() => void updateSelectedAlert({ status: "in_progress" })}
+                          disabled={actionPending}
+                        >
+                          Mark In Progress
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-foreground border-border bg-transparent"
+                          onClick={() => void updateSelectedAlert({ status: "resolved" })}
+                          disabled={actionPending}
+                        >
+                          Resolve
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-foreground border-border bg-transparent"
+                          onClick={() => void updateSelectedAlert({ status: "dismissed" })}
+                          disabled={actionPending}
+                        >
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="correlation" className="mt-4">
+                    <div className="flex flex-col gap-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold uppercase text-muted-foreground">Correlation Overview</h4>
+                        <Badge variant="outline" className="text-[10px]">
+                          {correlation?.totalRelated ?? 0} related
+                        </Badge>
+                      </div>
+                      {correlationLoading ? (
+                        <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+                          Loading correlation...
+                        </div>
+                      ) : null}
+                      {!correlationLoading && correlation && correlation.timeline.length > 0 ? (
+                        <div className="space-y-2">
+                          {correlation.timeline.map((item) => (
+                            <div key={`timeline-${item.id}`} className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-xs font-medium text-foreground">{formatAlertTitle(item.title)}</div>
+                                <div className="text-[10px] text-muted-foreground">{formatTimestamp(item.timestamp)}</div>
+                              </div>
+                              <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                                <Badge variant="outline" className="font-mono text-[10px]">{item.id}</Badge>
+                                {item.actor ? <Badge variant="secondary" className="text-[10px]">Actor: {item.actor}</Badge> : null}
+                                {item.ipAddress ? <Badge variant="secondary" className="text-[10px]">IP: {item.ipAddress}</Badge> : null}
+                                {item.resource ? <Badge variant="secondary" className="text-[10px]">Resource: {item.resource}</Badge> : null}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      {!correlationLoading && (!correlation || correlation.timeline.length === 0) ? (
+                        <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+                          No related alerts found by actor, IP, resource, or incident ID.
+                        </div>
+                      ) : null}
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="case" className="mt-4">
+                    <div className="flex flex-col gap-4">
+                      {!caseItem ? (
+                        <div className="rounded-lg border border-border bg-secondary/30 p-4">
+                          <p className="text-xs text-muted-foreground">No case exists for this alert.</p>
+                          <div className="mt-2 flex flex-col gap-2">
                             <Select value={selectedAssigneeUserId || "none"} onValueChange={setSelectedAssigneeUserId}>
-                              <SelectTrigger className="h-8 bg-secondary md:w-72">
-                                <SelectValue placeholder="Assign to analyst/admin" />
+                              <SelectTrigger className="h-8 bg-secondary md:w-80">
+                                <SelectValue placeholder="Optional: assign on create" />
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">Unassigned</SelectItem>
@@ -1512,265 +1669,343 @@ export default function AlertsPage() {
                                 ))}
                               </SelectContent>
                             </Select>
-                            <Button size="sm" variant="outline" onClick={() => void updateCaseAssignee()}>
-                              Apply assignment
-                            </Button>
+                            <Select value={selectedPlaybookId} onValueChange={setSelectedPlaybookId}>
+                              <SelectTrigger className="h-8 bg-secondary md:w-80">
+                                <SelectValue placeholder="Select playbook" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePlaybooks.map((entry) => (
+                                  <SelectItem key={entry.id} value={entry.id}>
+                                    {entry.name} ({entry.key})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                          <div className="mt-2 text-[10px] text-muted-foreground">
-                            Workload hint uses active cases (`open` + `in_progress`) per assignee.
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                          <div className="rounded-lg border border-border bg-card p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Notes</h4>
-                              <Badge variant="outline" className="text-[10px]">{caseNotes.length}</Badge>
-                            </div>
-                            <Textarea
-                              value={caseNoteInput}
-                              onChange={(event) => setCaseNoteInput(event.target.value)}
-                              placeholder="Add investigation note..."
-                              className="min-h-[70px] text-xs"
-                            />
-                            <Button size="sm" variant="outline" className="mt-2" onClick={() => void addCaseNote()}>
-                              <Plus className="mr-1 h-3.5 w-3.5" />
-                              Add note
-                            </Button>
-                            <div className="mt-3 space-y-2">
-                              {caseNotes.slice(0, 5).map((note) => (
-                                <div key={note.id} className="rounded border border-border px-2 py-1.5 text-xs text-foreground">
-                                  <div className="text-[10px] text-muted-foreground">{formatTimestamp(note.createdAt)}</div>
-                                  {note.body}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-
-                          <div className="rounded-lg border border-border bg-card p-3">
-                            <div className="mb-2 flex items-center justify-between">
-                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Tasks</h4>
-                              <Badge variant="outline" className="text-[10px]">{caseTasks.length}</Badge>
-                            </div>
-                            <div className="flex gap-2">
-                              <Input
-                                value={caseTaskInput}
-                                onChange={(event) => setCaseTaskInput(event.target.value)}
-                                placeholder="Add task..."
-                                className="h-8 text-xs"
-                              />
-                              <Button size="sm" variant="outline" onClick={() => void addCaseTask()}>Add</Button>
-                            </div>
-                            <div className="mt-3 space-y-2">
-                              {caseTasks.map((task) => (
-                                <div key={task.id} className="flex items-center gap-2 rounded border border-border px-2 py-1.5 text-xs">
-                                  <Checkbox checked={task.isDone} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
-                                  <span className={cn("text-foreground", task.isDone ? "line-through text-muted-foreground" : "")}>
-                                    {task.title}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="rounded-lg border border-border bg-card p-3">
-                          <div className="mb-2 flex items-center justify-between">
-                            <h4 className="text-xs font-semibold uppercase text-muted-foreground">Evidence</h4>
-                            <Badge variant="outline" className="text-[10px]">{caseEvidence.length}</Badge>
-                          </div>
-                          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                            <Input value={caseEvidenceLabel} onChange={(event) => setCaseEvidenceLabel(event.target.value)} placeholder="Evidence label" className="h-8 text-xs" />
-                            <Input value={caseEvidenceUrl} onChange={(event) => setCaseEvidenceUrl(event.target.value)} placeholder="https://..." className="h-8 text-xs md:col-span-2" />
-                          </div>
-                          <Button size="sm" variant="outline" className="mt-2" onClick={() => void addCaseEvidence()}>
-                            <Link2 className="mr-1 h-3.5 w-3.5" />
-                            Add evidence
+                          <Button
+                            size="sm"
+                            className="mt-3"
+                            onClick={() => void createCaseForSelectedAlert()}
+                            disabled={caseLoading}
+                          >
+                            <ClipboardList className="mr-1 h-3.5 w-3.5" />
+                            Create case
                           </Button>
-                          <div className="mt-3 space-y-2">
-                            {caseEvidence.slice(0, 8).map((item) => (
-                              <div key={item.id} className="rounded border border-border px-2 py-1.5 text-xs">
-                                <div className="font-medium text-foreground">{item.label}</div>
-                                {item.url ? <div className="text-muted-foreground">{item.url}</div> : null}
-                              </div>
-                            ))}
-                          </div>
                         </div>
+                      ) : (
+                        <>
+                          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Case ID</div>
+                              <div className="text-xs font-mono text-foreground">{caseItem.id.slice(0, 8)}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Status</div>
+                              <div className="text-xs text-foreground">{caseItem.status.replace("_", " ")}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Priority</div>
+                              <div className="text-xs text-foreground">{caseItem.priority}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Assignee</div>
+                              <div className="text-xs text-foreground">{caseItem.assignee || "Unassigned"}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Playbook</div>
+                              <div className="text-xs text-foreground">{caseItem.playbookKey || "Standard"}</div>
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">SLA</div>
+                              <div className="text-xs text-foreground">{caseItem.slaStatus || "on_track"}</div>
+                              {caseItem.dueAt ? (
+                                <div className="text-[10px] text-muted-foreground">Due {formatTimestamp(caseItem.dueAt)}</div>
+                              ) : null}
+                            </div>
+                            <div className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="text-[10px] uppercase text-muted-foreground">Escalation</div>
+                              <div className="text-xs text-foreground">
+                                {caseItem.escalationLevel ? `L${caseItem.escalationLevel} ${caseItem.escalationTarget || ""}` : "None"}
+                              </div>
+                            </div>
+                          </div>
 
-                        <div className="rounded-lg border border-border bg-card p-3">
-                          <div className="mb-2 flex items-center gap-2">
-                            <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-                            <h4 className="text-xs font-semibold uppercase text-muted-foreground">Audit Trail</h4>
-                          </div>
-                          <div className="space-y-1.5">
-                            {caseActivity.slice(0, 10).map((entry) => (
-                              <div key={entry.id} className="text-xs text-muted-foreground">
-                                <span className="font-medium text-foreground">{entry.action.replace(/_/g, " ")}</span> - {formatTimestamp(entry.createdAt)}
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </TabsContent>
-                <TabsContent value="event" className="mt-4">
-                  <div className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Actor</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.actor || selectedAlert.assignee || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">IP Address</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.ipAddress || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Resource</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.resource || "Unknown"}</span>
-                      </div>
-                      <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
-                        <span className="text-[10px] font-medium uppercase text-muted-foreground">Category</span>
-                        <span className="text-xs font-medium text-foreground">{selectedAlert.category || "Unknown"}</span>
-                      </div>
-                    </div>
-                    {selectedAlert.parsedFacts?.ruleIds?.length ? (
-                      <div className="rounded-lg border border-border bg-card px-3 py-2">
-                        <div className="text-[10px] uppercase text-muted-foreground">Related Rule IDs</div>
-                        <div className="mt-1 flex flex-wrap gap-1.5">
-                          {selectedAlert.parsedFacts.ruleIds.map((ruleId) => (
-                            <Badge key={ruleId} variant="outline" className="font-mono text-[10px]">
-                              {ruleId}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                      <Input
-                        value={eventSearch}
-                        onChange={(event) => setEventSearch(event.target.value)}
-                        placeholder="Search event fields..."
-                        className="h-8 bg-secondary pl-8 text-xs"
-                      />
-                    </div>
-                    {filteredParsedEntries.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                        {filteredParsedEntries.map((field) => (
-                          <div key={field.key} className="rounded-lg border border-border bg-card px-3 py-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="text-[10px] uppercase text-muted-foreground">{field.label}</div>
-                              <Button
-                                size="icon"
-                                variant="ghost"
-                                className="h-5 w-5 text-muted-foreground"
-                                onClick={() => void copyValue(`field-${field.key}`, field.value)}
-                              >
-                                {copiedKey === `field-${field.key}` ? (
-                                  <Check className="h-3 w-3" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <div className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Assignment Workflow</div>
+                            <div className="flex flex-col gap-2 md:flex-row">
+                              <Select value={selectedAssigneeUserId || "none"} onValueChange={setSelectedAssigneeUserId}>
+                                <SelectTrigger className="h-8 bg-secondary md:w-72">
+                                  <SelectValue placeholder="Assign to analyst/admin" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">Unassigned</SelectItem>
+                                  {caseAssignees.map((entry) => (
+                                    <SelectItem key={entry.id} value={entry.id}>
+                                      {entry.name} ({entry.openCases} open)
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button size="sm" variant="outline" onClick={() => void updateCaseAssignee()}>
+                                Apply assignment
                               </Button>
                             </div>
-                            <div className="text-xs text-foreground break-words" title={field.value}>
-                              {field.value}
+                            <div className="mt-2 text-[10px] text-muted-foreground">
+                              Workload hint uses active cases (`open` + `in_progress`) per assignee.
                             </div>
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
-                        No parsed event fields match this search.
-                      </div>
-                    )}
 
-                    <Accordion type="single" collapsible className="w-full">
-                      <AccordionItem value="raw">
-                        <AccordionTrigger className="text-xs">Raw Payload</AccordionTrigger>
-                        <AccordionContent>
-                          <div className="space-y-3">
-                            <div>
-                              <div className="mb-1 flex items-center justify-between">
-                                <span className="text-[10px] uppercase text-muted-foreground">Full Source Row (CSV)</span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 text-[10px]"
-                                  onClick={() => void copyValue("raw-row", prettyRow || "No full source row available.")}
-                                >
-                                  {copiedKey === "raw-row" ? "Copied" : "Copy row"}
-                                </Button>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            <div className="rounded-lg border border-border bg-card p-3">
+                              <div className="mb-2 flex items-center justify-between">
+                                <h4 className="text-xs font-semibold uppercase text-muted-foreground">Notes</h4>
+                                <Badge variant="outline" className="text-[10px]">{caseNotes.length}</Badge>
                               </div>
-                              {prettyRow ? (
-                                <SyntaxHighlighter
-                                  language={languageForHighlighter(rawRowLanguage)}
-                                  style={vs2015}
-                                  wrapLongLines
-                                  customStyle={{
-                                    margin: 0,
-                                    borderRadius: "0.5rem",
-                                    border: "1px solid hsl(var(--border))",
-                                    background: "hsl(var(--secondary) / 0.2)",
-                                    maxHeight: "14rem",
-                                    fontSize: "11px",
-                                  }}
-                                >
-                                  {prettyRow}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <div className="rounded-lg border border-border bg-secondary/20 p-3 text-[11px] text-muted-foreground">
-                                  No full source row available.
-                                </div>
-                              )}
+                              <Textarea
+                                value={caseNoteInput}
+                                onChange={(event) => setCaseNoteInput(event.target.value)}
+                                placeholder="Add investigation note..."
+                                className="min-h-[70px] text-xs"
+                              />
+                              <Button size="sm" variant="outline" className="mt-2" onClick={() => void addCaseNote()}>
+                                <Plus className="mr-1 h-3.5 w-3.5" />
+                                Add note
+                              </Button>
+                              <div className="mt-3 space-y-2">
+                                {caseNotes.slice(0, 5).map((note) => (
+                                  <div key={note.id} className="rounded border border-border px-2 py-1.5 text-xs text-foreground">
+                                    <div className="text-[10px] text-muted-foreground">{formatTimestamp(note.createdAt)}</div>
+                                    {note.body}
+                                  </div>
+                                ))}
+                              </div>
                             </div>
-                            <div>
-                              <div className="mb-1 flex items-center justify-between">
-                                <span className="text-[10px] uppercase text-muted-foreground">Extracted Payload Field</span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-6 text-[10px]"
-                                  onClick={() => void copyValue("raw-payload", prettyPayload || "No event payload available.")}
-                                >
-                                  {copiedKey === "raw-payload" ? "Copied" : "Copy payload"}
-                                </Button>
+
+                            <div className="rounded-lg border border-border bg-card p-3">
+                              <div className="mb-2 flex items-center justify-between">
+                                <h4 className="text-xs font-semibold uppercase text-muted-foreground">Tasks</h4>
+                                <Badge variant="outline" className="text-[10px]">{caseTasks.length}</Badge>
                               </div>
-                              {prettyPayload ? (
-                                <SyntaxHighlighter
-                                  language={languageForHighlighter(rawPayloadLanguage)}
-                                  style={vs2015}
-                                  wrapLongLines
-                                  customStyle={{
-                                    margin: 0,
-                                    borderRadius: "0.5rem",
-                                    border: "1px solid hsl(var(--border))",
-                                    background: "hsl(var(--secondary) / 0.2)",
-                                    maxHeight: "16rem",
-                                    fontSize: "11px",
-                                  }}
-                                >
-                                  {prettyPayload}
-                                </SyntaxHighlighter>
-                              ) : (
-                                <div className="rounded-lg border border-border bg-secondary/20 p-3 text-[11px] text-muted-foreground">
-                                  No event payload available.
-                                </div>
-                              )}
+                              <div className="flex gap-2">
+                                <Input
+                                  value={caseTaskInput}
+                                  onChange={(event) => setCaseTaskInput(event.target.value)}
+                                  placeholder="Add task..."
+                                  className="h-8 text-xs"
+                                />
+                                <Button size="sm" variant="outline" onClick={() => void addCaseTask()}>Add</Button>
+                              </div>
+                              <div className="mt-3 space-y-2">
+                                {caseTasks.map((task) => (
+                                  <div key={task.id} className="flex items-center gap-2 rounded border border-border px-2 py-1.5 text-xs">
+                                    <Checkbox checked={task.isDone} onCheckedChange={(checked) => void toggleTask(task, Boolean(checked))} />
+                                    <span className={cn("text-foreground", task.isDone ? "line-through text-muted-foreground" : "")}>
+                                      {task.title}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
-                        </AccordionContent>
-                      </AccordionItem>
-                    </Accordion>
-                  </div>
-                </TabsContent>
-              </Tabs>
-            </>
-          )}
-        </DialogContent>
-      </Dialog>
-    </DashboardLayout>
+
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <div className="mb-2 flex items-center justify-between">
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Evidence</h4>
+                              <Badge variant="outline" className="text-[10px]">{caseEvidence.length}</Badge>
+                            </div>
+                            <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+                              <Input value={caseEvidenceLabel} onChange={(event) => setCaseEvidenceLabel(event.target.value)} placeholder="Evidence label" className="h-8 text-xs" />
+                              <Input value={caseEvidenceUrl} onChange={(event) => setCaseEvidenceUrl(event.target.value)} placeholder="https://..." className="h-8 text-xs md:col-span-2" />
+                            </div>
+                            <Button size="sm" variant="outline" className="mt-2" onClick={() => void addCaseEvidence()}>
+                              <Link2 className="mr-1 h-3.5 w-3.5" />
+                              Add evidence
+                            </Button>
+                            <div className="mt-3 space-y-2">
+                              {caseEvidence.slice(0, 8).map((item) => (
+                                <div key={item.id} className="rounded border border-border px-2 py-1.5 text-xs">
+                                  <div className="font-medium text-foreground">{item.label}</div>
+                                  {item.url ? <div className="text-muted-foreground">{item.url}</div> : null}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="rounded-lg border border-border bg-card p-3">
+                            <div className="mb-2 flex items-center gap-2">
+                              <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+                              <h4 className="text-xs font-semibold uppercase text-muted-foreground">Audit Trail</h4>
+                            </div>
+                            <div className="space-y-1.5">
+                              {caseActivity.slice(0, 10).map((entry) => (
+                                <div key={entry.id} className="text-xs text-muted-foreground">
+                                  <span className="font-medium text-foreground">{entry.action.replace(/_/g, " ")}</span> - {formatTimestamp(entry.createdAt)}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="event" className="mt-4">
+                    <div className="flex flex-col gap-4">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Actor</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.actor || selectedAlert.assignee || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">IP Address</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.ipAddress || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Resource</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.resource || "Unknown"}</span>
+                        </div>
+                        <div className="flex flex-col gap-1 rounded-lg bg-secondary/50 p-3">
+                          <span className="text-[10px] font-medium uppercase text-muted-foreground">Category</span>
+                          <span className="text-xs font-medium text-foreground">{selectedAlert.category || "Unknown"}</span>
+                        </div>
+                      </div>
+                      {selectedAlert.parsedFacts?.ruleIds?.length ? (
+                        <div className="rounded-lg border border-border bg-card px-3 py-2">
+                          <div className="text-[10px] uppercase text-muted-foreground">Related Rule IDs</div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            {selectedAlert.parsedFacts.ruleIds.map((ruleId) => (
+                              <Badge key={ruleId} variant="outline" className="font-mono text-[10px]">
+                                {ruleId}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          value={eventSearch}
+                          onChange={(event) => setEventSearch(event.target.value)}
+                          placeholder="Search event fields..."
+                          className="h-8 bg-secondary pl-8 text-xs"
+                        />
+                      </div>
+                      {filteredParsedEntries.length > 0 ? (
+                        <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                          {filteredParsedEntries.map((field) => (
+                            <div key={field.key} className="rounded-lg border border-border bg-card px-3 py-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="text-[10px] uppercase text-muted-foreground">{field.label}</div>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5 text-muted-foreground"
+                                  onClick={() => void copyValue(`field-${field.key}`, field.value)}
+                                >
+                                  {copiedKey === `field-${field.key}` ? (
+                                    <Check className="h-3 w-3" />
+                                  ) : (
+                                    <Copy className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </div>
+                              <div className="text-xs text-foreground break-words" title={field.value}>
+                                {field.value}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-lg border border-border bg-secondary/30 p-3 text-xs text-muted-foreground">
+                          No parsed event fields match this search.
+                        </div>
+                      )}
+
+                      <Accordion type="single" collapsible className="w-full">
+                        <AccordionItem value="raw">
+                          <AccordionTrigger className="text-xs">Raw Payload</AccordionTrigger>
+                          <AccordionContent>
+                            <div className="space-y-3">
+                              <div>
+                                <div className="mb-1 flex items-center justify-between">
+                                  <span className="text-[10px] uppercase text-muted-foreground">Full Source Row (CSV)</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px]"
+                                    onClick={() => void copyValue("raw-row", prettyRow || "No full source row available.")}
+                                  >
+                                    {copiedKey === "raw-row" ? "Copied" : "Copy row"}
+                                  </Button>
+                                </div>
+                                {prettyRow ? (
+                                  <SyntaxHighlighter
+                                    language={languageForHighlighter(rawRowLanguage)}
+                                    style={vs2015}
+                                    wrapLongLines
+                                    customStyle={{
+                                      margin: 0,
+                                      borderRadius: "0.5rem",
+                                      border: "1px solid hsl(var(--border))",
+                                      background: "hsl(var(--secondary) / 0.2)",
+                                      maxHeight: "14rem",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    {prettyRow}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <div className="rounded-lg border border-border bg-secondary/20 p-3 text-[11px] text-muted-foreground">
+                                    No full source row available.
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <div className="mb-1 flex items-center justify-between">
+                                  <span className="text-[10px] uppercase text-muted-foreground">Extracted Payload Field</span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-6 text-[10px]"
+                                    onClick={() => void copyValue("raw-payload", prettyPayload || "No event payload available.")}
+                                  >
+                                    {copiedKey === "raw-payload" ? "Copied" : "Copy payload"}
+                                  </Button>
+                                </div>
+                                {prettyPayload ? (
+                                  <SyntaxHighlighter
+                                    language={languageForHighlighter(rawPayloadLanguage)}
+                                    style={vs2015}
+                                    wrapLongLines
+                                    customStyle={{
+                                      margin: 0,
+                                      borderRadius: "0.5rem",
+                                      border: "1px solid hsl(var(--border))",
+                                      background: "hsl(var(--secondary) / 0.2)",
+                                      maxHeight: "16rem",
+                                      fontSize: "11px",
+                                    }}
+                                  >
+                                    {prettyPayload}
+                                  </SyntaxHighlighter>
+                                ) : (
+                                  <div className="rounded-lg border border-border bg-secondary/20 p-3 text-[11px] text-muted-foreground">
+                                    No event payload available.
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </AccordionContent>
+                        </AccordionItem>
+                      </Accordion>
+                    </div>
+                  </TabsContent>
+                </Tabs>
+              </>
+            )}
+          </DialogContent>
+        </Dialog>
+      </DashboardLayout>
     </RenderProfiler>
   )
 }
+

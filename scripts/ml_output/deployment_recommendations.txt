@@ -1,0 +1,27 @@
+DEPLOYMENT RECOMMENDATIONS
+Generated: 2026-06-08 17:37
+Best Model: Random Forest
+F1 Macro  : 0.7694
+AUC-ROC   : 0.9105
+
+1. MODEL RELIABILITY
+   - Accuracy 89% is acceptable for pre-filtering; do NOT use standalone for TP detection.
+   - TruePositive recall is low due to class imbalance. Always escalate to human analyst.
+   - Retrain monthly as new incidents accumulate.
+
+2. CLASS IMBALANCE
+   - SMOTE was applied on training data only (no data leakage).
+   - Monitor TruePositive recall in production — alert if it drops below 40%.
+
+3. FEATURES TO MONITOR
+   - incident_duration_h and alert_span_h may not be available at alert creation time.
+   - Fallback to -1 for missing values (consistent with training).
+
+4. API INTEGRATION
+   - Served via FastAPI on port 8004 (scripts/ml_server.py).
+   - Next.js proxy: /api/incident-grade → POST /predict.
+   - Replace the saved pkl with the best_model.pkl from this pipeline if F1 improved.
+
+5. MONITORING
+   - Log prediction distributions weekly.
+   - Trigger retraining if macro F1 on labeled production samples drops below 0.75.

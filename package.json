@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "simulate:alerts": "node scripts/alert-sequencer.cjs",
+    "simulate:alerts:reset": "node scripts/alert-sequencer.cjs --reset",
     "smoke:alerts": "node scripts/smoke-alert-type-check.cjs",
     "test:e2e:smoke": "playwright test tests/e2e/smoke.spec.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3.0.75",
+    "@azure/msal-browser": "^5.13.0",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
@@ -62,6 +65,7 @@
     "next-intl": "^4.8.3",
     "next-themes": "^0.4.6",
     "pg": "^8.18.0",
+    "powerbi-client": "^2.23.10",
     "react": "^19",
     "react-day-picker": "8.10.1",
     "react-dom": "^19",
@@ -73,6 +77,8 @@
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^1.1.2",
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0",
     "xml-formatter": "^3.6.7",
     "zod": "^3.24.1"
   },
